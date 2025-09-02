@@ -4,6 +4,6 @@ export type SyncEvent =
   | { type: "apply"; block: Schema.Block; tip: Schema.TipOrOrigin }
   | { type: "reset"; point: Schema.PointOrOrigin; tip: Schema.TipOrOrigin };
 
-export type SyncService = {
+export type SyncClient = {
   sync: (points?: Schema.PointOrOrigin[]) => AsyncIterable<SyncEvent>;
 };
