@@ -21,7 +21,6 @@ const ogmios = new OgmiosSyncService({
     if (++processed > 2) {
       break;
     }
-    console.log();
     console.log(
       event.type,
       event.type === "apply"
@@ -30,7 +29,6 @@ const ogmios = new OgmiosSyncService({
           ? event.point
           : event.point.slot,
     );
-    console.log();
   }
 })()
   .catch(console.error)
