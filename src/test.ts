@@ -21,7 +21,12 @@ const points: Schema.PointOrOrigin[] = [
 ];
 
 (async () => {
-  for await (const event of controller.start({ points, take: 5 })) {
+  setTimeout(() => controller.stop(), 3000);
+  for await (const event of controller.start({
+    points,
+    take: 5,
+    throttle: 2000,
+  })) {
     processEvent(event);
   }
 })()

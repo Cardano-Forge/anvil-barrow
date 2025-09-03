@@ -10,7 +10,7 @@ type Event = { event: SyncEvent; requestNext: () => void } | Error;
 export class OgmiosSyncClient implements SyncClient {
   constructor(protected _config: ConnectionConfig) {}
 
-  async *sync(opts: SyncClientSyncOpts = {}): AsyncIterable<SyncEvent> {
+  async *sync(opts: SyncClientSyncOpts = {}): AsyncGenerator<SyncEvent, void> {
     const events: Array<Event> = [];
     let waitingResolve: (() => void) | null = null;
 
@@ -59,7 +59,6 @@ export class OgmiosSyncClient implements SyncClient {
 
         yield item.event;
         item.requestNext();
-        await client.shutdown();
       }
     } finally {
       await client.shutdown().catch(() => {

@@ -9,5 +9,5 @@ export type SyncClientSyncOpts = {
 };
 
 export type SyncClient = {
-  sync: (opts?: SyncClientSyncOpts) => AsyncIterable<SyncEvent>;
+  sync: (opts?: SyncClientSyncOpts) => AsyncGenerator<SyncEvent, void>;
 };
