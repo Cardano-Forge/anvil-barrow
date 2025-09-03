@@ -1,4 +1,5 @@
 import type { Schema } from "@cardano-ogmios/client";
+import { unwrap } from "trynot";
 import { Controller } from "./controller";
 import { OgmiosSyncClient } from "./ogmios";
 import type { SyncEvent } from "./types";
@@ -13,38 +14,22 @@ const controller = new Controller({
   syncClient,
 });
 
-const points: Schema.PointOrOrigin[] = [
-  {
-    id: "fa5a6a51632b90557665fcb33970f4fb372dff6ad0191e083ff3b6b221f2b87e",
-    slot: 101163751,
-  },
-];
+const point: Schema.PointOrOrigin = {
+  id: "fa5a6a51632b90557665fcb33970f4fb372dff6ad0191e083ff3b6b221f2b87e",
+  slot: 101163751,
+};
 
 (async () => {
-  setTimeout(() => controller.stop(), 3000);
-  for await (const event of controller.start({
-    points,
-    take: 5,
-    throttle: 2000,
-  })) {
-    processEvent(event);
-  }
+  await unwrap(
+    controller.start({
+      fn: processEvent,
+      point,
+      take: 5,
+    }),
+  );
 })()
   .catch(console.error)
   .finally(() => process.exit(0));
-
-export function getTip(event: SyncEvent) {
-  if (event.type === "reset") {
-    return event.point;
-  }
-  if (event.block.type === "ebb") {
-    return "origin";
-  }
-  return {
-    id: event.block.id,
-    slot: event.block.slot,
-  };
-}
 
 function processEvent(event: SyncEvent) {
   console.log(
