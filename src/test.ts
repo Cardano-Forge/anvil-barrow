@@ -1,6 +1,5 @@
 import type { Schema } from "@cardano-ogmios/client";
-import { defer } from "ix/asynciterable";
-import { filter, retry, take } from "ix/asynciterable/operators";
+import { Controller } from "./controller";
 import { OgmiosSyncClient } from "./ogmios";
 import type { SyncEvent } from "./types";
 
@@ -8,6 +7,10 @@ const syncClient = new OgmiosSyncClient({
   host: process.env.OGMIOS_NODE_HOST,
   port: Number(process.env.OGMIOS_NODE_PORT),
   tls: Boolean(process.env.OGMIOS_NODE_TLS),
+});
+
+const controller = new Controller({
+  syncClient,
 });
 
 const points: Schema.PointOrOrigin[] = [
@@ -18,13 +21,9 @@ const points: Schema.PointOrOrigin[] = [
 ];
 
 (async () => {
-  await defer(() => syncClient.sync({ points }))
-    .pipe(
-      retry(),
-      filter((event) => event.type === "apply"),
-      take(6),
-    )
-    .forEach(processEvent);
+  for await (const event of controller.start({ points, take: 5 })) {
+    processEvent(event);
+  }
 })()
   .catch(console.error)
   .finally(() => process.exit(0));
