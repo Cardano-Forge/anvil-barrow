@@ -2,16 +2,15 @@ import {
   type ConnectionConfig,
   createChainSynchronizationClient,
   createInteractionContext,
-  type Schema,
 } from "@cardano-ogmios/client";
-import type { SyncEvent } from "./types";
+import type { SyncClient, SyncClientSyncOpts, SyncEvent } from "./types";
 
 type Event = { event: SyncEvent; requestNext: () => void } | Error;
 
-export class OgmiosSyncClient {
+export class OgmiosSyncClient implements SyncClient {
   constructor(protected _config: ConnectionConfig) {}
 
-  async *sync(points?: Schema.PointOrOrigin[]): AsyncIterable<SyncEvent> {
+  async *sync(opts: SyncClientSyncOpts = {}): AsyncIterable<SyncEvent> {
     const events: Array<Event> = [];
     let waitingResolve: (() => void) | null = null;
 
@@ -43,7 +42,7 @@ export class OgmiosSyncClient {
     });
 
     try {
-      await client.resume(points);
+      await client.resume(opts.points);
       while (true) {
         let item = events.shift();
 
@@ -60,6 +59,7 @@ export class OgmiosSyncClient {
 
         yield item.event;
         item.requestNext();
+        await client.shutdown();
       }
     } finally {
       await client.shutdown().catch(() => {

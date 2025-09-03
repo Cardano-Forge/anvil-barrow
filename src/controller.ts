@@ -29,7 +29,7 @@ export class Controller {
   async *sync(opts: ControllerSyncOpts = {}): AsyncIterable<SyncEvent> {
     try {
       let processed = 0;
-      for await (const event of this._config.syncClient.sync(opts.points)) {
+      for await (const event of this._config.syncClient.sync(opts)) {
         yield event;
         if (opts.take && ++processed >= opts.take) {
           break;

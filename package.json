@@ -57,6 +57,7 @@
     "@biomejs/biome": "^2.2.2",
     "@cardano-ogmios/client": "^6.13.0",
     "@types/node": "^24.3.0",
+    "ix": "^7.0.0",
     "tsup": "^8.5.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
