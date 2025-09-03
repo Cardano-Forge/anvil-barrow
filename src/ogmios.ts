@@ -9,7 +9,7 @@ import type { SyncEvent } from "./types";
 type Event = { event: SyncEvent; requestNext: () => void } | Error;
 
 export class OgmiosSyncClient {
-  constructor(private _config: ConnectionConfig) {}
+  constructor(protected _config: ConnectionConfig) {}
 
   async *sync(points?: Schema.PointOrOrigin[]): AsyncIterable<SyncEvent> {
     const events: Array<Event> = [];
