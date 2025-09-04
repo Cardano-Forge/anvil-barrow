@@ -5,8 +5,6 @@ import { ErrorHandler } from "./error-handler";
 import { OgmiosSyncClient } from "./ogmios";
 import type { SyncEvent } from "./types";
 
-let processed = 0;
-
 const syncClient = new OgmiosSyncClient({
   host: process.env.OGMIOS_NODE_HOST,
   port: Number(process.env.OGMIOS_NODE_PORT),
@@ -28,13 +26,9 @@ const point: Schema.PointOrOrigin = {
 };
 
 (async () => {
-  setTimeout(() => {
-    controller.pause().then(() => {
-      processed = 0;
-    });
-  }, 3000);
+  setTimeout(() => controller.pause(), 3000);
   const initState = await unwrap(
-    controller.start({ fn: processEvent, point, take: 10, throttle: 1000 }),
+    controller.start({ fn: processEvent, point, throttle: 1000 }),
   );
   console.log("initState", initState);
   await controller.waitForCompletion();
@@ -48,12 +42,9 @@ const point: Schema.PointOrOrigin = {
   .catch(console.error)
   .finally(() => process.exit(0));
 
+let applied = 0;
+
 function processEvent(event: SyncEvent) {
-  processed += 1;
-  if (processed > 4) {
-    processed = 0;
-    throw new Error("too much processing");
-  }
   console.log(
     event.type,
     event.type === "apply"
@@ -62,4 +53,10 @@ function processEvent(event: SyncEvent) {
         ? event.point
         : event.point.slot,
   );
+  if (event.type === "apply") {
+    applied += 1;
+  }
+  if (applied >= 10) {
+    return { done: true };
+  }
 }

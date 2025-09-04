@@ -1,7 +1,7 @@
 import type { Schema } from "@cardano-ogmios/client";
 import { assert, parseError, type Result, wrap } from "trynot";
 import { ErrorHandler } from "./error-handler";
-import type { SyncClient, SyncEvent } from "./types";
+import type { MaybePromise, SyncClient, SyncEvent } from "./types";
 
 export type ControllerConfig = {
   syncClient: SyncClient;
@@ -9,9 +9,11 @@ export type ControllerConfig = {
 };
 
 export type ControllerStartOpts = {
-  fn: (event: SyncEvent) => Promise<void> | void;
+  fn: (
+    event: SyncEvent,
+    // biome-ignore lint/suspicious/noConfusingVoidType: Allow void for better DX
+  ) => MaybePromise<{ done: boolean } | undefined | void>;
   point?: Schema.PointOrOrigin;
-  take?: number;
   throttle?: number;
 };
 
@@ -67,8 +69,10 @@ export class Controller {
     assert(this._state.status === "running");
 
     try {
+      let done = false;
+
       for await (const event of this._state.generator) {
-        await opts.fn(event);
+        const res = await opts.fn(event);
 
         this._state.chainTip = event.tip;
         if (event.type === "apply" && event.block.type !== "ebb") {
@@ -97,7 +101,8 @@ export class Controller {
 
         this._config.errorHandler.reset();
 
-        if (opts.take && this._state.applyCount >= opts.take) {
+        if (res?.done) {
+          done = true;
           break;
         }
 
@@ -107,8 +112,7 @@ export class Controller {
       }
 
       this._state = {
-        status:
-          opts.take && this._state.applyCount >= opts.take ? "done" : "paused",
+        status: done ? "done" : "paused",
         startOpts: this._state.startOpts,
         startingPoint: this._state.startingPoint,
         syncTip: this._state.syncTip,

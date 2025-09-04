@@ -11,3 +11,5 @@ export type SyncClientSyncOpts = {
 export type SyncClient = {
   sync: (opts?: SyncClientSyncOpts) => AsyncGenerator<SyncEvent, void>;
 };
+
+export type MaybePromise<T> = T | Promise<T>;
