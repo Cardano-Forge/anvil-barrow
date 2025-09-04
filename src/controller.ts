@@ -66,7 +66,6 @@ export class Controller {
         this._state.processed += 1;
 
         if (opts.take && this._state.processed >= opts.take) {
-          this.stop();
           break;
         }
 
@@ -80,6 +79,15 @@ export class Controller {
       } else {
         throw error;
       }
+    } finally {
+      this._state = {
+        status: "stopped",
+        startingPoint: this._state.startingPoint,
+        syncTip: this._state.syncTip,
+        chainTip: this._state.chainTip,
+        processed: this._state.processed,
+        stoppedAt: Date.now(),
+      };
     }
   }
 
@@ -125,7 +133,7 @@ export class Controller {
     }
   }
 
-  stop(): Result<ControllerStateStopped> {
+  async stop(): Promise<Result<ControllerStateStopped>> {
     switch (this._state.status) {
       case "idle": {
         return new Error("Controller is idle");
@@ -135,16 +143,17 @@ export class Controller {
       }
       case "running":
       case "paused": {
-        this._state.generator.return();
-        this._state = {
-          status: "stopped",
-          startingPoint: this._state.startingPoint,
-          syncTip: this._state.syncTip,
-          chainTip: this._state.chainTip,
-          processed: this._state.processed,
-          stoppedAt: Date.now(),
-        };
-        return this._state;
+        try {
+          await this._state.generator.return();
+          return await this._state.promise.then(() => {
+            if (this._state.status !== "stopped") {
+              return new Error("Controller did not stop");
+            }
+            return this._state;
+          });
+        } catch (error) {
+          return parseError(error);
+        }
       }
     }
   }
