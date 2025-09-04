@@ -3,11 +3,17 @@ import { assert, parseError, type Result, wrap } from "trynot";
 import { ErrorHandler } from "./error-handler";
 import { ProcessingError } from "./errors";
 import { toMilliseconds, type Unit } from "./time";
-import type { MaybePromise, SyncClient, SyncEvent } from "./types";
+import type {
+  ControllerEvent,
+  MaybePromise,
+  SyncClient,
+  SyncEvent,
+} from "./types";
 
 export type ControllerConfig = {
   syncClient: SyncClient;
   errorHandler?: ErrorHandler;
+  eventHandler?: (event: ControllerEvent) => void;
 };
 
 export type ControllerStartOpts = {
@@ -68,7 +74,19 @@ export class Controller {
           console.error(parseError(error).message);
           return undefined;
         }),
+      eventHandler: config.eventHandler ?? (() => {}),
     };
+  }
+
+  private _emitEvent(event: Omit<ControllerEvent, "timestamp">): void {
+    try {
+      this._config.eventHandler({
+        ...event,
+        timestamp: Date.now(),
+      } as ControllerEvent);
+    } catch {
+      // Silently ignore event handler errors to prevent disrupting controller flow
+    }
   }
 
   private async _runSyncLoop(
@@ -80,13 +98,36 @@ export class Controller {
       let done = false;
 
       for await (const event of this._state.generator) {
+        this._emitEvent({
+          type: "event.received",
+          data: { event },
+        });
+
         try {
           if (opts.filter && !(await opts.filter(event))) {
             this._state.filterCount += 1;
+            this._emitEvent({
+              type: "event.filtered",
+              data: { event },
+            });
             continue;
           }
 
+          this._emitEvent({
+            type: "event.processing",
+            data: { event },
+          });
+
+          const processingStart = Date.now();
+
           const res = await opts.fn(event);
+
+          const processingTime = Date.now() - processingStart;
+
+          this._emitEvent({
+            type: "event.processed",
+            data: { event, result: res, processingTime },
+          });
 
           this._state.chainTip = event.tip;
           if (event.type === "apply" && event.block.type !== "ebb") {
@@ -127,6 +168,12 @@ export class Controller {
           if (opts.throttle) {
             const [value, unit] = opts.throttle;
             const delay = toMilliseconds(value, unit);
+
+            this._emitEvent({
+              type: "throttle.delay",
+              data: { delay, unit },
+            });
+
             await new Promise((resolve) => setTimeout(resolve, delay));
           }
         } catch (error) {
@@ -136,8 +183,11 @@ export class Controller {
         }
       }
 
+      const status = done ? "done" : "paused";
+      const stoppedAt = Date.now();
+
       this._state = {
-        status: done ? "done" : "paused",
+        status,
         startOpts: this._state.startOpts,
         startingPoint: this._state.startingPoint,
         syncTip: this._state.syncTip,
@@ -147,23 +197,69 @@ export class Controller {
         resetCount: this._state.resetCount,
         errorCount: this._state.errorCount,
         lastError: this._state.lastError,
-        stoppedAt: Date.now(),
+        stoppedAt,
       };
+
+      if (status === "done") {
+        this._emitEvent({
+          type: "controller.completed",
+          data: {
+            status: "done",
+            stats: {
+              applyCount: this._state.applyCount,
+              resetCount: this._state.resetCount,
+              filterCount: this._state.filterCount,
+              errorCount: this._state.errorCount,
+            },
+          },
+        });
+      }
     } catch (error) {
+      const parsedError = parseError(error);
       this._state.errorCount += 1;
-      this._state.lastError = parseError(error);
+      this._state.lastError = parsedError;
+
+      this._emitEvent({
+        type: "error.caught",
+        data: { error: parsedError, context: "sync_loop" },
+      });
 
       if (this._state.status === "running") {
         const handlerResult = await this._config.errorHandler.handle(error);
+
+        this._emitEvent({
+          type: "error.handled",
+          data: { error: parsedError, handlerResult },
+        });
+
         if (handlerResult?.retry) {
           if (handlerResult.retry.delay) {
+            this._emitEvent({
+              type: "retry.scheduled",
+              data: {
+                delay: handlerResult.retry.delay,
+                attempt: this._state.errorCount,
+                originalError: parsedError,
+              },
+            });
             await new Promise((resolve) => {
               setTimeout(resolve, handlerResult.retry?.delay);
             });
           }
 
+          const resumePoint = this._state.syncTip ?? this._state.startingPoint;
+
+          this._emitEvent({
+            type: "retry.started",
+            data: {
+              attempt: this._state.errorCount,
+              resumePoint,
+              originalError: parsedError,
+            },
+          });
+
           this._state.generator = this._config.syncClient.sync({
-            point: this._state.syncTip ?? this._state.startingPoint,
+            point: resumePoint,
           });
 
           return this._runSyncLoop(opts);
@@ -183,6 +279,20 @@ export class Controller {
         lastError: this._state.lastError,
         stoppedAt: Date.now(),
       };
+
+      this._emitEvent({
+        type: "controller.completed",
+        data: {
+          status: "crashed",
+          stats: {
+            applyCount: this._state.applyCount,
+            resetCount: this._state.resetCount,
+            filterCount: this._state.filterCount,
+            errorCount: this._state.errorCount,
+          },
+          lastError: this._state.lastError,
+        },
+      });
     }
   }
 
@@ -216,6 +326,14 @@ export class Controller {
       lastError: undefined,
     };
 
+    this._emitEvent({
+      type: "controller.started",
+      data: {
+        point,
+        startOpts,
+      },
+    });
+
     this._state.promise = this._runSyncLoop(startOpts);
 
     return this._state;
@@ -246,6 +364,18 @@ export class Controller {
 
     switch (this._state.status) {
       case "paused": {
+        this._emitEvent({
+          type: "controller.paused",
+          data: {
+            reason: "user_requested",
+            stats: {
+              applyCount: this._state.applyCount,
+              resetCount: this._state.resetCount,
+              filterCount: this._state.filterCount,
+              errorCount: this._state.errorCount,
+            },
+          },
+        });
         return this._state;
       }
       default: {
@@ -275,6 +405,19 @@ export class Controller {
           errorCount: this._state.errorCount,
           lastError: this._state.lastError,
         };
+
+        this._emitEvent({
+          type: "controller.resumed",
+          data: {
+            resumePoint: this._state.syncTip ?? this._state.startingPoint,
+            stats: {
+              applyCount: this._state.applyCount,
+              resetCount: this._state.resetCount,
+              filterCount: this._state.filterCount,
+              errorCount: this._state.errorCount,
+            },
+          },
+        });
 
         this._state.promise = this._runSyncLoop(this._state.startOpts);
 

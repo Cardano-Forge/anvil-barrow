@@ -1,10 +1,10 @@
 import type { Schema } from "@cardano-ogmios/client";
-import { parseError, unwrap } from "trynot";
+import { unwrap } from "trynot";
 import { Controller } from "./controller";
 import { ErrorHandler } from "./error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "./errors";
+import { noop } from "./lib/noop";
 import { OgmiosSyncClient } from "./ogmios";
-import type { SyncEvent } from "./types";
 
 const syncClient = new OgmiosSyncClient({
   host: process.env.OGMIOS_NODE_HOST,
@@ -13,7 +13,6 @@ const syncClient = new OgmiosSyncClient({
 });
 
 const errorHandler = new ErrorHandler()
-  .register((error) => console.log("error", parseError(error).message))
   .register(
     ProcessingError,
     ErrorHandler.retry({ maxRetries: 1, persistent: true }),
@@ -30,6 +29,7 @@ const errorHandler = new ErrorHandler()
 const controller = new Controller({
   syncClient,
   errorHandler,
+  eventHandler: event => console.log(event.type),
 });
 
 const point: Schema.PointOrOrigin = {
@@ -38,40 +38,20 @@ const point: Schema.PointOrOrigin = {
 };
 
 (async () => {
-  const initState = await unwrap(
+  await unwrap(
     controller.start({
-      fn: processEvent,
+      fn: noop,
       point,
-      throttle: [1, "seconds"],
+      throttle: [0.5, "seconds"],
       // filter: (event) => event.type === "apply" && event.block.height === 3859660,
-      // takeUntil: ({ state }) => state.applyCount > 0,
+      takeUntil: ({ state }) => state.applyCount >= 10,
     }),
   );
-  console.log("initState", initState);
   await controller.waitForCompletion();
   if (controller.state.status === "paused") {
-    const resumeState = await unwrap(controller.resume());
-    console.log("resumeState", resumeState);
+    await unwrap(controller.resume());
     await controller.waitForCompletion();
   }
-  console.log("finalState", controller.state);
 })()
   .catch(console.error)
   .finally(() => process.exit(0));
-
-let processedCount = 0;
-
-function processEvent(event: SyncEvent) {
-  processedCount += 1;
-  if (processedCount === 10 || processedCount === 15) {
-    // throw new Error("processing error");
-  }
-  console.log(
-    event.type,
-    event.type === "apply"
-      ? event.block.height
-      : typeof event.point === "string"
-        ? event.point
-        : event.point.slot,
-  );
-}
