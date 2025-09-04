@@ -12,7 +12,7 @@ const syncClient = new OgmiosSyncClient({
 });
 
 const errorHandler = new ErrorHandler()
-  .register(ErrorHandler.retry({ maxRetries: 3, persistent: true }))
+  .register(ErrorHandler.retry({ maxRetries: 4, persistent: true }))
   .register((error) => console.log("error", parseError(error).message));
 
 const controller = new Controller({

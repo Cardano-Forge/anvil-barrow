@@ -19,20 +19,23 @@ export type ControllerStateBase = {
   startingPoint: Schema.PointOrOrigin | undefined;
   syncTip: Schema.TipOrOrigin | undefined;
   chainTip: Schema.TipOrOrigin | undefined;
-  processed: number;
+  processedCount: number;
+  errorCount: number;
+  lastError: Error | undefined;
 };
 
 export type ControllerStateIdle = { status: "idle" };
 
 export type ControllerStateRunning = {
-  status: "running" | "paused";
+  status: "running";
   generator: AsyncGenerator<SyncEvent, void>;
   promise: Promise<void>;
 } & ControllerStateBase;
 
 export type ControllerStateStopped = {
-  status: "stopped";
+  status: "stopped" | "crashed";
   stoppedAt: number;
+  stoppedWithError?: Error;
 } & ControllerStateBase;
 
 export type ControllerState =
@@ -74,15 +77,15 @@ export class Controller {
             height: event.block.height,
           };
         }
-        if (this._state.processed === 0 && !this._state.startingPoint) {
+        if (this._state.processedCount === 0 && !this._state.startingPoint) {
           this._state.startingPoint = this._state.syncTip;
         }
 
-        this._state.processed += 1;
+        this._state.processedCount += 1;
 
         this._config.errorHandler.reset();
 
-        if (opts.take && this._state.processed >= opts.take) {
+        if (opts.take && this._state.processedCount >= opts.take) {
           break;
         }
 
@@ -96,10 +99,15 @@ export class Controller {
         startingPoint: this._state.startingPoint,
         syncTip: this._state.syncTip,
         chainTip: this._state.chainTip,
-        processed: this._state.processed,
+        processedCount: this._state.processedCount,
+        errorCount: this._state.errorCount,
+        lastError: this._state.lastError,
         stoppedAt: Date.now(),
       };
     } catch (error) {
+      this._state.errorCount += 1;
+      this._state.lastError = parseError(error);
+
       if (this._state.status === "running") {
         const handlerResult = await this._config.errorHandler.handle(error);
         if (handlerResult?.retry) {
@@ -117,11 +125,13 @@ export class Controller {
       }
 
       this._state = {
-        status: "stopped",
+        status: "crashed",
         startingPoint: this._state.startingPoint,
         syncTip: this._state.syncTip,
         chainTip: this._state.chainTip,
-        processed: this._state.processed,
+        processedCount: this._state.processedCount,
+        errorCount: this._state.errorCount,
+        lastError: this._state.lastError,
         stoppedAt: Date.now(),
       };
     }
@@ -136,8 +146,7 @@ export class Controller {
     ...opts
   }: ControllerStartOpts): Promise<Result<ControllerStateRunning>> {
     switch (this._state.status) {
-      case "running":
-      case "paused": {
+      case "running": {
         return new Error("Controller is already running");
       }
     }
@@ -151,7 +160,9 @@ export class Controller {
       startingPoint: point,
       syncTip: undefined,
       chainTip: undefined,
-      processed: 0,
+      processedCount: 0,
+      errorCount: 0,
+      lastError: undefined,
     };
 
     this._state.promise = this._runSyncLoop(opts);
@@ -164,11 +175,11 @@ export class Controller {
       case "idle": {
         return new Error("Controller is idle");
       }
-      case "stopped": {
+      case "stopped":
+      case "crashed": {
         return new Error("Controller is already stopped");
       }
-      case "running":
-      case "paused": {
+      case "running": {
         return wrap(this._state.promise);
       }
     }
@@ -179,11 +190,11 @@ export class Controller {
       case "idle": {
         return new Error("Controller is idle");
       }
-      case "stopped": {
+      case "stopped":
+      case "crashed": {
         return this._state;
       }
-      case "running":
-      case "paused": {
+      case "running": {
         try {
           await this._state.generator.return();
           return await this._state.promise.then(() => {
