@@ -1,10 +1,20 @@
 import type { Schema } from "@cardano-ogmios/client";
+import { type Level, pino } from "pino";
 import { unwrap } from "trynot";
-import { Controller } from "./controller";
+import { Controller, type ControllerEvent } from "./controller";
 import { ErrorHandler } from "./error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "./errors";
-import { noop } from "./lib/noop";
 import { OgmiosSyncClient } from "./ogmios";
+
+const logger = pino({
+  level: "info",
+  transport: {
+    target: "pino-pretty",
+    options: {
+      colorize: true,
+    },
+  },
+});
 
 const syncClient = new OgmiosSyncClient({
   host: process.env.OGMIOS_NODE_HOST,
@@ -15,7 +25,7 @@ const syncClient = new OgmiosSyncClient({
 const errorHandler = new ErrorHandler()
   .register(
     ProcessingError,
-    ErrorHandler.retry({ maxRetries: 1, persistent: true }),
+    ErrorHandler.retry({ maxRetries: 1, baseDelay: 5000, persistent: true }),
   )
   .register(
     SocketError,
@@ -29,7 +39,9 @@ const errorHandler = new ErrorHandler()
 const controller = new Controller({
   syncClient,
   errorHandler,
-  eventHandler: event => console.log(event.type),
+  eventHandler: (event) => {
+    logger[getLogLevel(event)](event.data, event.type);
+  },
 });
 
 const point: Schema.PointOrOrigin = {
@@ -40,7 +52,7 @@ const point: Schema.PointOrOrigin = {
 (async () => {
   await unwrap(
     controller.start({
-      fn: noop,
+      fn: processEvent,
       point,
       throttle: [0.5, "seconds"],
       // filter: (event) => event.type === "apply" && event.block.height === 3859660,
@@ -55,3 +67,44 @@ const point: Schema.PointOrOrigin = {
 })()
   .catch(console.error)
   .finally(() => process.exit(0));
+
+let processed = 0;
+function processEvent() {
+  processed++;
+  if (processed === 4) {
+    throw new Error("processing error");
+  }
+}
+
+function getLogLevel(event: ControllerEvent): Level {
+  switch (event.type) {
+    case "event.received":
+    case "event.processing": {
+      return "trace";
+    }
+    case "event.filtered":
+    case "event.processed":
+    case "throttle.delay": {
+      return "debug";
+    }
+    case "controller.started":
+    case "controller.resumed":
+    case "retry.started": {
+      return "info";
+    }
+    case "controller.paused":
+    case "error.handled":
+    case "retry.scheduled": {
+      return "warn";
+    }
+    case "error.caught": {
+      return "error";
+    }
+    case "controller.completed": {
+      return event.data.status === "crashed" ? "error" : "info";
+    }
+    default: {
+      return "info";
+    }
+  }
+}

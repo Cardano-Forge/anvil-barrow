@@ -1,14 +1,110 @@
 import type { Schema } from "@cardano-ogmios/client";
 import { assert, parseError, type Result, wrap } from "trynot";
-import { ErrorHandler } from "./error-handler";
+import { ErrorHandler, type HandlerResult } from "./error-handler";
 import { ProcessingError } from "./errors";
 import { toMilliseconds, type Unit } from "./time";
-import type {
-  ControllerEvent,
-  MaybePromise,
-  SyncClient,
-  SyncEvent,
-} from "./types";
+import type { MaybePromise, SyncClient, SyncEvent } from "./types";
+
+export type ControllerStats = {
+  applyCount: number;
+  resetCount: number;
+  filterCount: number;
+  errorCount: number;
+};
+
+export type ControllerEvent =
+  | {
+      type: "controller.started";
+      timestamp: number;
+      data: {
+        point?: Schema.PointOrOrigin;
+        startOpts: Omit<ControllerStartOpts, "point">;
+      };
+    }
+  | {
+      type: "controller.paused";
+      timestamp: number;
+      data: {
+        reason: "user_requested" | "error_limit";
+        stats: ControllerStats;
+      };
+    }
+  | {
+      type: "controller.resumed";
+      timestamp: number;
+      data: {
+        resumePoint?: Schema.PointOrOrigin;
+        stats: ControllerStats;
+      };
+    }
+  | {
+      type: "controller.completed";
+      timestamp: number;
+      data: {
+        status: "done" | "crashed";
+        stats: ControllerStats;
+        lastError?: Error;
+      };
+    }
+  | {
+      type: "event.received" | "event.filtered" | "event.processing";
+      timestamp: number;
+      data: {
+        event: SyncEvent["type"];
+      };
+    }
+  | {
+      type: "event.processed";
+      timestamp: number;
+      data: {
+        event: SyncEvent["type"];
+        result?: { done: boolean } | undefined;
+        processingTime: number;
+      };
+    }
+  | {
+      type: "throttle.delay";
+      timestamp: number;
+      data: {
+        delay: number;
+        unit: Unit;
+      };
+    }
+  | {
+      type: "error.caught";
+      timestamp: number;
+      data: {
+        error: Error;
+        event?: SyncEvent["type"];
+        context: "processing" | "sync_loop" | "generator";
+      };
+    }
+  | {
+      type: "error.handled";
+      timestamp: number;
+      data: {
+        error: Error;
+        handlerResult?: HandlerResult;
+      };
+    }
+  | {
+      type: "retry.scheduled";
+      timestamp: number;
+      data: {
+        delay: number;
+        attempt: number;
+        originalError: Error;
+      };
+    }
+  | {
+      type: "retry.started";
+      timestamp: number;
+      data: {
+        attempt: number;
+        resumePoint?: Schema.PointOrOrigin;
+        originalError: Error;
+      };
+    };
 
 export type ControllerConfig = {
   syncClient: SyncClient;
@@ -100,7 +196,7 @@ export class Controller {
       for await (const event of this._state.generator) {
         this._emitEvent({
           type: "event.received",
-          data: { event },
+          data: { event: event.type },
         });
 
         try {
@@ -108,14 +204,14 @@ export class Controller {
             this._state.filterCount += 1;
             this._emitEvent({
               type: "event.filtered",
-              data: { event },
+              data: { event: event.type },
             });
             continue;
           }
 
           this._emitEvent({
             type: "event.processing",
-            data: { event },
+            data: { event: event.type },
           });
 
           const processingStart = Date.now();
@@ -126,7 +222,11 @@ export class Controller {
 
           this._emitEvent({
             type: "event.processed",
-            data: { event, result: res, processingTime },
+            data: {
+              event: event.type,
+              result: res ?? undefined,
+              processingTime,
+            },
           });
 
           this._state.chainTip = event.tip;
@@ -177,9 +277,7 @@ export class Controller {
             await new Promise((resolve) => setTimeout(resolve, delay));
           }
         } catch (error) {
-          throw new ProcessingError(event, parseError(error).message, {
-            cause: error,
-          });
+          throw ProcessingError.fromSyncEvent(event, error);
         }
       }
 

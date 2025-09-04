@@ -59,6 +59,8 @@
     "@types/node": "^24.3.0",
     "@types/ws": "^8.18.1",
     "ix": "^7.0.0",
+    "pino": "^9.9.2",
+    "pino-pretty": "^13.1.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
