@@ -20,7 +20,8 @@ export type ControllerStateBase = {
   startingPoint: Schema.PointOrOrigin | undefined;
   syncTip: Schema.Point | Schema.TipOrOrigin | undefined;
   chainTip: Schema.TipOrOrigin | undefined;
-  processedCount: number;
+  applyCount: number;
+  resetCount: number;
   errorCount: number;
   lastError: Error | undefined;
 };
@@ -77,15 +78,26 @@ export class Controller {
             height: event.block.height,
           };
         }
-        if (this._state.processedCount === 0 && !this._state.startingPoint) {
+
+        const processedCount = this._state.applyCount + this._state.resetCount;
+        if (processedCount === 0 && !this._state.startingPoint) {
           this._state.startingPoint = this._state.syncTip;
         }
 
-        this._state.processedCount += 1;
+        switch (event.type) {
+          case "apply": {
+            this._state.applyCount += 1;
+            break;
+          }
+          case "reset": {
+            this._state.resetCount += 1;
+            break;
+          }
+        }
 
         this._config.errorHandler.reset();
 
-        if (opts.take && this._state.processedCount >= opts.take) {
+        if (opts.take && this._state.applyCount >= opts.take) {
           break;
         }
 
@@ -96,14 +108,13 @@ export class Controller {
 
       this._state = {
         status:
-          opts.take && this._state.processedCount >= opts.take
-            ? "done"
-            : "paused",
+          opts.take && this._state.applyCount >= opts.take ? "done" : "paused",
         startOpts: this._state.startOpts,
         startingPoint: this._state.startingPoint,
         syncTip: this._state.syncTip,
         chainTip: this._state.chainTip,
-        processedCount: this._state.processedCount,
+        applyCount: this._state.applyCount,
+        resetCount: this._state.resetCount,
         errorCount: this._state.errorCount,
         lastError: this._state.lastError,
         stoppedAt: Date.now(),
@@ -135,7 +146,8 @@ export class Controller {
         startingPoint: this._state.startingPoint,
         syncTip: this._state.syncTip,
         chainTip: this._state.chainTip,
-        processedCount: this._state.processedCount,
+        applyCount: this._state.applyCount,
+        resetCount: this._state.resetCount,
         errorCount: this._state.errorCount,
         lastError: this._state.lastError,
         stoppedAt: Date.now(),
@@ -166,7 +178,8 @@ export class Controller {
       startingPoint: point,
       syncTip: undefined,
       chainTip: undefined,
-      processedCount: 0,
+      applyCount: 0,
+      resetCount: 0,
       errorCount: 0,
       lastError: undefined,
     };
@@ -224,7 +237,8 @@ export class Controller {
           startingPoint: this._state.startingPoint,
           syncTip: this._state.syncTip,
           chainTip: this._state.chainTip,
-          processedCount: this._state.processedCount,
+          applyCount: this._state.applyCount,
+          resetCount: this._state.resetCount,
           errorCount: this._state.errorCount,
           lastError: this._state.lastError,
         };
