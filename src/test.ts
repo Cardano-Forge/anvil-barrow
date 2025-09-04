@@ -30,10 +30,9 @@ const point: Schema.PointOrOrigin = {
     controller.start({
       fn: processEvent,
       point,
-      throttle: 300,
-      filter: (event) =>
-        event.type === "apply" && event.block.height === 3859660,
-      takeUntil: ({ state }) => state.applyCount === 1,
+      throttle: [1, "seconds"],
+      // filter: (event) => event.type === "apply" && event.block.height === 3859660,
+      takeUntil: ({ state }) => state.applyCount > 0,
     }),
   );
   console.log("initState", initState);

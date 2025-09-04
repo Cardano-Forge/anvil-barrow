@@ -1,6 +1,7 @@
 import type { Schema } from "@cardano-ogmios/client";
 import { assert, parseError, type Result, wrap } from "trynot";
 import { ErrorHandler } from "./error-handler";
+import { toMilliseconds, type Unit } from "./time";
 import type { MaybePromise, SyncClient, SyncEvent } from "./types";
 
 export type ControllerConfig = {
@@ -14,7 +15,7 @@ export type ControllerStartOpts = {
     // biome-ignore lint/suspicious/noConfusingVoidType: Allow void for better DX
   ) => MaybePromise<{ done: boolean } | undefined | void>;
   point?: Schema.PointOrOrigin;
-  throttle?: number;
+  throttle?: [number, Unit];
   filter?: (event: SyncEvent) => MaybePromise<boolean>;
   takeUntil?: (data: {
     lastEvent: SyncEvent;
@@ -121,7 +122,9 @@ export class Controller {
         }
 
         if (opts.throttle) {
-          await new Promise((resolve) => setTimeout(resolve, opts.throttle));
+          const [value, unit] = opts.throttle;
+          const delay = toMilliseconds(value, unit);
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
 
