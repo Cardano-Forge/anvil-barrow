@@ -1,6 +1,6 @@
 import type { Schema } from "@cardano-ogmios/client";
 import { unwrap } from "trynot";
-import { Controller, type ControllerStateStopped } from "./controller";
+import { Controller } from "./controller";
 import { OgmiosSyncClient } from "./ogmios";
 import type { SyncEvent } from "./types";
 
@@ -21,14 +21,11 @@ const point: Schema.PointOrOrigin = {
 
 (async () => {
   const initState = await unwrap(
-    controller.start({ fn: processEvent, point, take: 10, throttle: 1000 }),
+    controller.start({ fn: processEvent, point, take: 10, throttle: 500 }),
   );
   console.log("init", initState);
-  const finalState = await new Promise<ControllerStateStopped>((resolve) => {
-    setTimeout(() => unwrap(controller.stop()).then(resolve), 5000);
-  });
-  console.log("finalState", finalState);
-  // await controller.waitForCompletion();
+  await controller.waitForCompletion();
+  console.log("finalState", controller.state);
 })()
   .catch(console.error)
   .finally(() => process.exit(0));
@@ -42,4 +39,7 @@ function processEvent(event: SyncEvent) {
         ? event.point
         : event.point.slot,
   );
+  if (event.type === "apply") {
+    throw new Error("THATS ENOUGH");
+  }
 }

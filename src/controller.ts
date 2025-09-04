@@ -40,9 +40,11 @@ export type ControllerState =
   | ControllerStateStopped;
 
 export class Controller {
-  protected _state: ControllerState = { status: "idle" };
+  protected _state: ControllerState;
 
-  constructor(protected _config: ControllerConfig) {}
+  constructor(protected _config: ControllerConfig) {
+    this._state = { status: "idle" };
+  }
 
   private async _runSyncLoop(opts: ControllerStartOpts): Promise<void> {
     assert(this._state.status === "running");
@@ -77,7 +79,7 @@ export class Controller {
       if (this._config.onError) {
         this._config.onError(parseError(error));
       } else {
-        throw error;
+        console.error(parseError(error).message);
       }
     } finally {
       this._state = {
@@ -89,6 +91,10 @@ export class Controller {
         stoppedAt: Date.now(),
       };
     }
+  }
+
+  get state(): ControllerState {
+    return this._state;
   }
 
   async start(
@@ -139,7 +145,7 @@ export class Controller {
         return new Error("Controller is idle");
       }
       case "stopped": {
-        return new Error("Controller is already stopped");
+        return this._state;
       }
       case "running":
       case "paused": {
