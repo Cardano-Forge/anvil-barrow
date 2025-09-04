@@ -1,6 +1,7 @@
 import type { Schema } from "@cardano-ogmios/client";
-import { unwrap } from "trynot";
+import { parseError, unwrap } from "trynot";
 import { Controller } from "./controller";
+import { ErrorHandler } from "./error-handler";
 import { OgmiosSyncClient } from "./ogmios";
 import type { SyncEvent } from "./types";
 
@@ -10,8 +11,13 @@ const syncClient = new OgmiosSyncClient({
   tls: Boolean(process.env.OGMIOS_NODE_TLS),
 });
 
+const errorHandler = new ErrorHandler()
+  .register(ErrorHandler.retry({ maxRetries: 3, persistent: true }))
+  .register((error) => console.log("error", parseError(error).message));
+
 const controller = new Controller({
   syncClient,
+  errorHandler,
 });
 
 const point: Schema.PointOrOrigin = {
@@ -21,7 +27,7 @@ const point: Schema.PointOrOrigin = {
 
 (async () => {
   const initState = await unwrap(
-    controller.start({ fn: processEvent, point, take: 10, throttle: 500 }),
+    controller.start({ fn: processEvent, point, take: 10, throttle: 100 }),
   );
   console.log("init", initState);
   await controller.waitForCompletion();
@@ -30,7 +36,14 @@ const point: Schema.PointOrOrigin = {
   .catch(console.error)
   .finally(() => process.exit(0));
 
+let processed = 0;
+
 function processEvent(event: SyncEvent) {
+  processed += 1;
+  if (processed > 2) {
+    processed = 0;
+    throw new Error("too much processing");
+  }
   console.log(
     event.type,
     event.type === "apply"
@@ -39,7 +52,4 @@ function processEvent(event: SyncEvent) {
         ? event.point
         : event.point.slot,
   );
-  if (event.type === "apply") {
-    throw new Error("THATS ENOUGH");
-  }
 }

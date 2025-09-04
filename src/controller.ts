@@ -1,10 +1,11 @@
 import type { Schema } from "@cardano-ogmios/client";
 import { assert, parseError, type Result, wrap } from "trynot";
+import { ErrorHandler } from "./error-handler";
 import type { SyncClient, SyncEvent } from "./types";
 
 export type ControllerConfig = {
   syncClient: SyncClient;
-  onError?: (error: Error) => void;
+  errorHandler?: ErrorHandler;
 };
 
 export type ControllerStartOpts = {
@@ -41,12 +42,24 @@ export type ControllerState =
 
 export class Controller {
   protected _state: ControllerState;
+  protected _config: Required<ControllerConfig>;
 
-  constructor(protected _config: ControllerConfig) {
+  constructor(config: ControllerConfig) {
     this._state = { status: "idle" };
+    this._config = {
+      syncClient: config.syncClient,
+      errorHandler:
+        config.errorHandler ??
+        new ErrorHandler((error) => {
+          console.error(parseError(error).message);
+          return undefined;
+        }),
+    };
   }
 
-  private async _runSyncLoop(opts: ControllerStartOpts): Promise<void> {
+  private async _runSyncLoop(
+    opts: Omit<ControllerStartOpts, "point">,
+  ): Promise<void> {
     assert(this._state.status === "running");
 
     try {
@@ -67,6 +80,8 @@ export class Controller {
 
         this._state.processed += 1;
 
+        this._config.errorHandler.reset();
+
         if (opts.take && this._state.processed >= opts.take) {
           break;
         }
@@ -75,13 +90,32 @@ export class Controller {
           await new Promise((resolve) => setTimeout(resolve, opts.throttle));
         }
       }
+
+      this._state = {
+        status: "stopped",
+        startingPoint: this._state.startingPoint,
+        syncTip: this._state.syncTip,
+        chainTip: this._state.chainTip,
+        processed: this._state.processed,
+        stoppedAt: Date.now(),
+      };
     } catch (error) {
-      if (this._config.onError) {
-        this._config.onError(parseError(error));
-      } else {
-        console.error(parseError(error).message);
+      if (this._state.status === "running") {
+        const handlerResult = await this._config.errorHandler.handle(error);
+        if (handlerResult?.retry) {
+          if (handlerResult.retry.delay) {
+            await new Promise((resolve) => {
+              setTimeout(resolve, handlerResult.retry?.delay);
+            });
+          }
+          const points = this._state.syncTip
+            ? [this._state.syncTip]
+            : undefined;
+          this._state.generator = this._config.syncClient.sync({ points });
+          return this._runSyncLoop(opts);
+        }
       }
-    } finally {
+
       this._state = {
         status: "stopped",
         startingPoint: this._state.startingPoint,
@@ -97,9 +131,10 @@ export class Controller {
     return this._state;
   }
 
-  async start(
-    opts: ControllerStartOpts,
-  ): Promise<Result<ControllerStateRunning>> {
+  async start({
+    point,
+    ...opts
+  }: ControllerStartOpts): Promise<Result<ControllerStateRunning>> {
     switch (this._state.status) {
       case "running":
       case "paused": {
@@ -107,13 +142,13 @@ export class Controller {
       }
     }
 
-    const points = opts.point ? [opts.point] : undefined;
+    const points = point ? [point] : undefined;
 
     this._state = {
       status: "running",
       generator: this._config.syncClient.sync({ points }),
       promise: Promise.resolve(),
-      startingPoint: opts.point,
+      startingPoint: point,
       syncTip: undefined,
       chainTip: undefined,
       processed: 0,
