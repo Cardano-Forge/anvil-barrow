@@ -1,5 +1,5 @@
 import type { Schema } from "@cardano-ogmios/client";
-import { assert, parseError, type Result } from "trynot";
+import { assert, parseError, type Result, wrap } from "trynot";
 import type { SyncClient, SyncEvent } from "./types";
 
 export type ControllerConfig = {
@@ -128,7 +128,7 @@ export class Controller {
       }
       case "running":
       case "paused": {
-        return this._state.promise;
+        return wrap(this._state.promise);
       }
     }
   }
