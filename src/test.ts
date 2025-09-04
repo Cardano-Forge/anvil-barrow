@@ -26,9 +26,15 @@ const point: Schema.PointOrOrigin = {
 };
 
 (async () => {
-  setTimeout(() => controller.pause(), 3000);
   const initState = await unwrap(
-    controller.start({ fn: processEvent, point, throttle: 1000 }),
+    controller.start({
+      fn: processEvent,
+      point,
+      throttle: 300,
+      takeUntil: ({ lastEvent }) => {
+        return lastEvent.type === "apply" && lastEvent.block.height === 3859660;
+      },
+    }),
   );
   console.log("initState", initState);
   await controller.waitForCompletion();
@@ -42,8 +48,6 @@ const point: Schema.PointOrOrigin = {
   .catch(console.error)
   .finally(() => process.exit(0));
 
-let applied = 0;
-
 function processEvent(event: SyncEvent) {
   console.log(
     event.type,
@@ -53,10 +57,4 @@ function processEvent(event: SyncEvent) {
         ? event.point
         : event.point.slot,
   );
-  if (event.type === "apply") {
-    applied += 1;
-  }
-  if (applied >= 10) {
-    return { done: true };
-  }
 }

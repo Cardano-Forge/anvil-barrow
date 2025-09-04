@@ -15,6 +15,10 @@ export type ControllerStartOpts = {
   ) => MaybePromise<{ done: boolean } | undefined | void>;
   point?: Schema.PointOrOrigin;
   throttle?: number;
+  takeUntil?: (data: {
+    lastEvent: SyncEvent;
+    state: ControllerStateRunning;
+  }) => MaybePromise<boolean>;
 };
 
 export type ControllerStateBase = {
@@ -101,7 +105,10 @@ export class Controller {
 
         this._config.errorHandler.reset();
 
-        if (res?.done) {
+        if (
+          res?.done ||
+          (await opts.takeUntil?.({ lastEvent: event, state: this._state }))
+        ) {
           done = true;
           break;
         }
