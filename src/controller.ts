@@ -1,6 +1,7 @@
 import type { Schema } from "@cardano-ogmios/client";
 import { assert, parseError, type Result, wrap } from "trynot";
 import { ErrorHandler } from "./error-handler";
+import { ProcessingError } from "./errors";
 import { toMilliseconds, type Unit } from "./time";
 import type { MaybePromise, SyncClient, SyncEvent } from "./types";
 
@@ -79,52 +80,59 @@ export class Controller {
       let done = false;
 
       for await (const event of this._state.generator) {
-        if (opts.filter && !(await opts.filter(event))) {
-          this._state.filterCount += 1;
-          continue;
-        }
+        try {
+          if (opts.filter && !(await opts.filter(event))) {
+            this._state.filterCount += 1;
+            continue;
+          }
 
-        const res = await opts.fn(event);
+          const res = await opts.fn(event);
 
-        this._state.chainTip = event.tip;
-        if (event.type === "apply" && event.block.type !== "ebb") {
-          this._state.syncTip = {
-            slot: event.block.slot,
-            id: event.block.id,
-            height: event.block.height,
-          };
-        }
+          this._state.chainTip = event.tip;
+          if (event.type === "apply" && event.block.type !== "ebb") {
+            this._state.syncTip = {
+              slot: event.block.slot,
+              id: event.block.id,
+              height: event.block.height,
+            };
+          }
 
-        const processedCount = this._state.applyCount + this._state.resetCount;
-        if (processedCount === 0 && !this._state.startingPoint) {
-          this._state.startingPoint = this._state.syncTip;
-        }
+          const processedCount =
+            this._state.applyCount + this._state.resetCount;
+          if (processedCount === 0 && !this._state.startingPoint) {
+            this._state.startingPoint = this._state.syncTip;
+          }
 
-        switch (event.type) {
-          case "apply": {
-            this._state.applyCount += 1;
+          switch (event.type) {
+            case "apply": {
+              this._state.applyCount += 1;
+              break;
+            }
+            case "reset": {
+              this._state.resetCount += 1;
+              break;
+            }
+          }
+
+          this._config.errorHandler.reset();
+
+          if (
+            res?.done ||
+            (await opts.takeUntil?.({ lastEvent: event, state: this._state }))
+          ) {
+            done = true;
             break;
           }
-          case "reset": {
-            this._state.resetCount += 1;
-            break;
+
+          if (opts.throttle) {
+            const [value, unit] = opts.throttle;
+            const delay = toMilliseconds(value, unit);
+            await new Promise((resolve) => setTimeout(resolve, delay));
           }
-        }
-
-        this._config.errorHandler.reset();
-
-        if (
-          res?.done ||
-          (await opts.takeUntil?.({ lastEvent: event, state: this._state }))
-        ) {
-          done = true;
-          break;
-        }
-
-        if (opts.throttle) {
-          const [value, unit] = opts.throttle;
-          const delay = toMilliseconds(value, unit);
-          await new Promise((resolve) => setTimeout(resolve, delay));
+        } catch (error) {
+          throw new ProcessingError(event, parseError(error).message, {
+            cause: error,
+          });
         }
       }
 

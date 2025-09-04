@@ -2,6 +2,7 @@ import type { Schema } from "@cardano-ogmios/client";
 import { parseError, unwrap } from "trynot";
 import { Controller } from "./controller";
 import { ErrorHandler } from "./error-handler";
+import { ProcessingError, SocketClosedError, SocketError } from "./errors";
 import { OgmiosSyncClient } from "./ogmios";
 import type { SyncEvent } from "./types";
 
@@ -12,8 +13,19 @@ const syncClient = new OgmiosSyncClient({
 });
 
 const errorHandler = new ErrorHandler()
-  .register(ErrorHandler.retry({ maxRetries: 4, persistent: true }))
-  .register((error) => console.log("error", parseError(error).message));
+  .register((error) => console.log("error", parseError(error).message))
+  .register(
+    ProcessingError,
+    ErrorHandler.retry({ maxRetries: 1, persistent: true }),
+  )
+  .register(
+    SocketError,
+    ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, exponential: true }),
+  )
+  .register(
+    SocketClosedError,
+    ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, exponential: true }),
+  );
 
 const controller = new Controller({
   syncClient,
@@ -32,7 +44,7 @@ const point: Schema.PointOrOrigin = {
       point,
       throttle: [1, "seconds"],
       // filter: (event) => event.type === "apply" && event.block.height === 3859660,
-      takeUntil: ({ state }) => state.applyCount > 0,
+      // takeUntil: ({ state }) => state.applyCount > 0,
     }),
   );
   console.log("initState", initState);
@@ -47,7 +59,13 @@ const point: Schema.PointOrOrigin = {
   .catch(console.error)
   .finally(() => process.exit(0));
 
+let processedCount = 0;
+
 function processEvent(event: SyncEvent) {
+  processedCount += 1;
+  if (processedCount === 10 || processedCount === 15) {
+    // throw new Error("processing error");
+  }
   console.log(
     event.type,
     event.type === "apply"
