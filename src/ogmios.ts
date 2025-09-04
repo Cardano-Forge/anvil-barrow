@@ -42,7 +42,8 @@ export class OgmiosSyncClient implements SyncClient {
     });
 
     try {
-      await client.resume(opts.points);
+      const points = opts.point ? [opts.point] : undefined;
+      await client.resume(points);
       while (true) {
         let item = events.shift();
 

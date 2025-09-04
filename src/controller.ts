@@ -16,8 +16,9 @@ export type ControllerStartOpts = {
 };
 
 export type ControllerStateBase = {
+  startOpts: Omit<ControllerStartOpts, "point">;
   startingPoint: Schema.PointOrOrigin | undefined;
-  syncTip: Schema.TipOrOrigin | undefined;
+  syncTip: Schema.Point | Schema.TipOrOrigin | undefined;
   chainTip: Schema.TipOrOrigin | undefined;
   processedCount: number;
   errorCount: number;
@@ -33,9 +34,8 @@ export type ControllerStateRunning = {
 } & ControllerStateBase;
 
 export type ControllerStateStopped = {
-  status: "stopped" | "crashed";
+  status: "paused" | "done" | "crashed";
   stoppedAt: number;
-  stoppedWithError?: Error;
 } & ControllerStateBase;
 
 export type ControllerState =
@@ -95,7 +95,11 @@ export class Controller {
       }
 
       this._state = {
-        status: "stopped",
+        status:
+          opts.take && this._state.processedCount >= opts.take
+            ? "done"
+            : "paused",
+        startOpts: this._state.startOpts,
         startingPoint: this._state.startingPoint,
         syncTip: this._state.syncTip,
         chainTip: this._state.chainTip,
@@ -116,16 +120,18 @@ export class Controller {
               setTimeout(resolve, handlerResult.retry?.delay);
             });
           }
-          const points = this._state.syncTip
-            ? [this._state.syncTip]
-            : undefined;
-          this._state.generator = this._config.syncClient.sync({ points });
+
+          this._state.generator = this._config.syncClient.sync({
+            point: this._state.syncTip ?? this._state.startingPoint,
+          });
+
           return this._runSyncLoop(opts);
         }
       }
 
       this._state = {
         status: "crashed",
+        startOpts: this._state.startOpts,
         startingPoint: this._state.startingPoint,
         syncTip: this._state.syncTip,
         chainTip: this._state.chainTip,
@@ -141,21 +147,21 @@ export class Controller {
     return this._state;
   }
 
-  async start({
-    point,
-    ...opts
-  }: ControllerStartOpts): Promise<Result<ControllerStateRunning>> {
+  async start(
+    opts: ControllerStartOpts,
+  ): Promise<Result<ControllerStateRunning>> {
     switch (this._state.status) {
       case "running": {
         return new Error("Controller is already running");
       }
     }
 
-    const points = point ? [point] : undefined;
+    const { point, ...startOpts } = opts;
 
     this._state = {
       status: "running",
-      generator: this._config.syncClient.sync({ points }),
+      startOpts,
+      generator: this._config.syncClient.sync({ point }),
       promise: Promise.resolve(),
       startingPoint: point,
       syncTip: undefined,
@@ -165,47 +171,72 @@ export class Controller {
       lastError: undefined,
     };
 
-    this._state.promise = this._runSyncLoop(opts);
+    this._state.promise = this._runSyncLoop(startOpts);
 
     return this._state;
   }
 
   async waitForCompletion(): Promise<Result<void>> {
     switch (this._state.status) {
-      case "idle": {
-        return new Error("Controller is idle");
-      }
-      case "stopped":
-      case "crashed": {
-        return new Error("Controller is already stopped");
-      }
       case "running": {
         return wrap(this._state.promise);
+      }
+      default: {
+        return new Error("Controller is not running");
       }
     }
   }
 
-  async stop(): Promise<Result<ControllerStateStopped>> {
+  async pause(): Promise<Result<ControllerStateStopped>> {
     switch (this._state.status) {
-      case "idle": {
-        return new Error("Controller is idle");
-      }
-      case "stopped":
-      case "crashed": {
-        return this._state;
-      }
       case "running": {
         try {
           await this._state.generator.return();
-          return await this._state.promise.then(() => {
-            if (this._state.status !== "stopped") {
-              return new Error("Controller did not stop");
-            }
-            return this._state;
-          });
+          await this._state.promise;
         } catch (error) {
           return parseError(error);
         }
+      }
+    }
+
+    switch (this._state.status) {
+      case "paused": {
+        return this._state;
+      }
+      default: {
+        return new Error(
+          `Controller is ${this._state.status}. Nothing to pause`,
+        );
+      }
+    }
+  }
+
+  async resume(): Promise<Result<ControllerStateRunning>> {
+    switch (this._state.status) {
+      case "paused": {
+        this._state = {
+          status: "running",
+          startOpts: this._state.startOpts,
+          generator: this._config.syncClient.sync({
+            point: this._state.syncTip ?? this._state.startingPoint,
+          }),
+          promise: Promise.resolve(),
+          startingPoint: this._state.startingPoint,
+          syncTip: this._state.syncTip,
+          chainTip: this._state.chainTip,
+          processedCount: this._state.processedCount,
+          errorCount: this._state.errorCount,
+          lastError: this._state.lastError,
+        };
+
+        this._state.promise = this._runSyncLoop(this._state.startOpts);
+
+        return this._state;
+      }
+      default: {
+        return new Error(
+          `Controller is ${this._state.status}. Nothing to resume`,
+        );
       }
     }
   }

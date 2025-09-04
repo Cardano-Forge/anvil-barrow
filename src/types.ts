@@ -5,7 +5,7 @@ export type SyncEvent =
   | { type: "reset"; point: Schema.PointOrOrigin; tip: Schema.TipOrOrigin };
 
 export type SyncClientSyncOpts = {
-  points?: Schema.PointOrOrigin[];
+  point?: Schema.PointOrOrigin;
 };
 
 export type SyncClient = {
