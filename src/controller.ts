@@ -1,5 +1,5 @@
 import type { Schema } from "@cardano-ogmios/client";
-import { parseError, type Result } from "trynot";
+import { assert, type Result } from "trynot";
 import type { SyncClient, SyncEvent } from "./types";
 
 export type ControllerConfig = {
@@ -25,6 +25,7 @@ export type ControllerStateIdle = { status: "idle" };
 export type ControllerStateRunning = {
   status: "running" | "paused";
   generator: AsyncGenerator<SyncEvent, void>;
+  promise: Promise<void>;
 } & ControllerStateBase;
 
 export type ControllerStateStopped = {
@@ -42,7 +43,38 @@ export class Controller {
 
   constructor(protected _config: ControllerConfig) {}
 
-  async start(opts: ControllerStartOpts): Promise<Result<void>> {
+  private async _runSyncLoop(opts: ControllerStartOpts): Promise<void> {
+    assert(this._state.status === "running");
+    for await (const event of this._state.generator) {
+      await opts.fn(event);
+
+      this._state.chainTip = event.tip;
+      if (event.type === "apply" && event.block.type !== "ebb") {
+        this._state.syncTip = {
+          slot: event.block.slot,
+          id: event.block.id,
+          height: event.block.height,
+        };
+      }
+      if (this._state.processed === 0 && !this._state.startingPoint) {
+        this._state.startingPoint = this._state.syncTip;
+      }
+
+      this._state.processed += 1;
+
+      if (opts.take && this._state.processed >= opts.take) {
+        this.stop();
+      }
+
+      if (opts.throttle) {
+        await new Promise((resolve) => setTimeout(resolve, opts.throttle));
+      }
+    }
+  }
+
+  async start(
+    opts: ControllerStartOpts,
+  ): Promise<Result<ControllerStateRunning>> {
     switch (this._state.status) {
       case "running":
       case "paused": {
@@ -50,43 +82,35 @@ export class Controller {
       }
     }
 
+    const points = opts.point ? [opts.point] : undefined;
+
     this._state = {
       status: "running",
-      generator: this._config.syncClient.sync({
-        points: opts.point ? [opts.point] : undefined,
-      }),
+      generator: this._config.syncClient.sync({ points }),
+      promise: Promise.resolve(),
       startingPoint: opts.point,
       syncTip: undefined,
       chainTip: undefined,
       processed: 0,
     };
 
-    try {
-      for await (const event of this._state.generator) {
-        await opts.fn(event);
-        this._state.chainTip = event.tip;
-        if (event.type === "apply" && event.block.type !== "ebb") {
-          this._state.syncTip = {
-            slot: event.block.slot,
-            id: event.block.id,
-            height: event.block.height,
-          };
-        }
-        if (this._state.processed === 0 && !this._state.startingPoint) {
-          this._state.startingPoint = this._state.syncTip;
-        }
-        this._state.processed++;
+    this._state.promise = this._runSyncLoop(opts);
 
-        if (opts.take && this._state.processed >= opts.take) {
-          this.stop();
-        }
+    return this._state;
+  }
 
-        if (opts.throttle) {
-          await new Promise((resolve) => setTimeout(resolve, opts.throttle));
-        }
+  async waitForCompletion(): Promise<Result<void>> {
+    switch (this._state.status) {
+      case "idle": {
+        return new Error("Controller is idle");
       }
-    } catch (error) {
-      return parseError(error);
+      case "stopped": {
+        return new Error("Controller is already stopped");
+      }
+      case "running":
+      case "paused": {
+        return this._state.promise;
+      }
     }
   }
 

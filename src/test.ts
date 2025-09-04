@@ -20,13 +20,11 @@ const point: Schema.PointOrOrigin = {
 };
 
 (async () => {
-  await unwrap(
-    controller.start({
-      fn: processEvent,
-      point,
-      take: 5,
-    }),
+  const state = await unwrap(
+    controller.start({ fn: processEvent, point, take: 5 }),
   );
+  console.log("state", state);
+  await controller.waitForCompletion();
 })()
   .catch(console.error)
   .finally(() => process.exit(0));
