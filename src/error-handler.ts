@@ -1,42 +1,3 @@
-export type ErrorFilter =
-  | ((error: unknown) => boolean)
-  | (new (
-      // biome-ignore lint/suspicious/noExplicitAny: Error constructors need flexible parameters
-      ...args: any[]
-    ) => Error);
-
-export type HandlerResult = {
-  retry?: { delay?: number };
-};
-
-export type ErrorHandlerFn = (
-  error: unknown,
-  // biome-ignore lint/suspicious/noConfusingVoidType: Allow void for better DX
-) => HandlerResult | undefined | void;
-
-export type RetryOptions = {
-  maxRetries: number;
-  baseDelay?: number;
-  exponential?: boolean;
-  persistent?: boolean;
-};
-
-export type BuiltinHandlerType = {
-  type: "retry";
-} & RetryOptions;
-
-export type ErrorHandlerConfig = {
-  filter?: ErrorFilter;
-  handler: ErrorHandlerFn | BuiltinHandlerType;
-};
-
-type RegisteredHandler = {
-  filter?: ErrorFilter;
-  handler: ErrorHandlerFn;
-  reset?: () => void;
-  persistent?: boolean;
-};
-
 export class ErrorHandler {
   private handlers: RegisteredHandler[] = [];
 
@@ -178,3 +139,42 @@ function resolveRetryHandler(opts: {
 
   return { handler, reset };
 }
+
+export type ErrorFilter =
+  | ((error: unknown) => boolean)
+  | (new (
+      // biome-ignore lint/suspicious/noExplicitAny: Error constructors need flexible parameters
+      ...args: any[]
+    ) => Error);
+
+export type HandlerResult = {
+  retry?: { delay?: number };
+};
+
+export type ErrorHandlerFn = (
+  error: unknown,
+  // biome-ignore lint/suspicious/noConfusingVoidType: Allow void for better DX
+) => HandlerResult | undefined | void;
+
+export type RetryOptions = {
+  maxRetries: number;
+  baseDelay?: number;
+  exponential?: boolean;
+  persistent?: boolean;
+};
+
+export type BuiltinHandlerType = {
+  type: "retry";
+} & RetryOptions;
+
+export type ErrorHandlerConfig = {
+  filter?: ErrorFilter;
+  handler: ErrorHandlerFn | BuiltinHandlerType;
+};
+
+type RegisteredHandler = {
+  filter?: ErrorFilter;
+  handler: ErrorHandlerFn;
+  reset?: () => void;
+  persistent?: boolean;
+};
