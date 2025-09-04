@@ -31,9 +31,9 @@ const point: Schema.PointOrOrigin = {
       fn: processEvent,
       point,
       throttle: 300,
-      takeUntil: ({ lastEvent }) => {
-        return lastEvent.type === "apply" && lastEvent.block.height === 3859660;
-      },
+      filter: (event) =>
+        event.type === "apply" && event.block.height === 3859660,
+      takeUntil: ({ state }) => state.applyCount === 1,
     }),
   );
   console.log("initState", initState);

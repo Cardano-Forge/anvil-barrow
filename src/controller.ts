@@ -15,6 +15,7 @@ export type ControllerStartOpts = {
   ) => MaybePromise<{ done: boolean } | undefined | void>;
   point?: Schema.PointOrOrigin;
   throttle?: number;
+  filter?: (event: SyncEvent) => MaybePromise<boolean>;
   takeUntil?: (data: {
     lastEvent: SyncEvent;
     state: ControllerStateRunning;
@@ -26,6 +27,7 @@ export type ControllerStateBase = {
   startingPoint: Schema.PointOrOrigin | undefined;
   syncTip: Schema.Point | Schema.TipOrOrigin | undefined;
   chainTip: Schema.TipOrOrigin | undefined;
+  filterCount: number;
   applyCount: number;
   resetCount: number;
   errorCount: number;
@@ -76,6 +78,11 @@ export class Controller {
       let done = false;
 
       for await (const event of this._state.generator) {
+        if (opts.filter && !(await opts.filter(event))) {
+          this._state.filterCount += 1;
+          continue;
+        }
+
         const res = await opts.fn(event);
 
         this._state.chainTip = event.tip;
@@ -124,6 +131,7 @@ export class Controller {
         startingPoint: this._state.startingPoint,
         syncTip: this._state.syncTip,
         chainTip: this._state.chainTip,
+        filterCount: this._state.filterCount,
         applyCount: this._state.applyCount,
         resetCount: this._state.resetCount,
         errorCount: this._state.errorCount,
@@ -157,6 +165,7 @@ export class Controller {
         startingPoint: this._state.startingPoint,
         syncTip: this._state.syncTip,
         chainTip: this._state.chainTip,
+        filterCount: this._state.filterCount,
         applyCount: this._state.applyCount,
         resetCount: this._state.resetCount,
         errorCount: this._state.errorCount,
@@ -189,6 +198,7 @@ export class Controller {
       startingPoint: point,
       syncTip: undefined,
       chainTip: undefined,
+      filterCount: 0,
       applyCount: 0,
       resetCount: 0,
       errorCount: 0,
@@ -248,6 +258,7 @@ export class Controller {
           startingPoint: this._state.startingPoint,
           syncTip: this._state.syncTip,
           chainTip: this._state.chainTip,
+          filterCount: this._state.filterCount,
           applyCount: this._state.applyCount,
           resetCount: this._state.resetCount,
           errorCount: this._state.errorCount,
