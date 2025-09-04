@@ -1,9 +1,10 @@
 import type { Schema } from "@cardano-ogmios/client";
-import { assert, type Result } from "trynot";
+import { assert, parseError, type Result } from "trynot";
 import type { SyncClient, SyncEvent } from "./types";
 
 export type ControllerConfig = {
   syncClient: SyncClient;
+  onError?: (error: Error) => void;
 };
 
 export type ControllerStartOpts = {
@@ -45,29 +46,39 @@ export class Controller {
 
   private async _runSyncLoop(opts: ControllerStartOpts): Promise<void> {
     assert(this._state.status === "running");
-    for await (const event of this._state.generator) {
-      await opts.fn(event);
 
-      this._state.chainTip = event.tip;
-      if (event.type === "apply" && event.block.type !== "ebb") {
-        this._state.syncTip = {
-          slot: event.block.slot,
-          id: event.block.id,
-          height: event.block.height,
-        };
+    try {
+      for await (const event of this._state.generator) {
+        await opts.fn(event);
+
+        this._state.chainTip = event.tip;
+        if (event.type === "apply" && event.block.type !== "ebb") {
+          this._state.syncTip = {
+            slot: event.block.slot,
+            id: event.block.id,
+            height: event.block.height,
+          };
+        }
+        if (this._state.processed === 0 && !this._state.startingPoint) {
+          this._state.startingPoint = this._state.syncTip;
+        }
+
+        this._state.processed += 1;
+
+        if (opts.take && this._state.processed >= opts.take) {
+          this.stop();
+          break;
+        }
+
+        if (opts.throttle) {
+          await new Promise((resolve) => setTimeout(resolve, opts.throttle));
+        }
       }
-      if (this._state.processed === 0 && !this._state.startingPoint) {
-        this._state.startingPoint = this._state.syncTip;
-      }
-
-      this._state.processed += 1;
-
-      if (opts.take && this._state.processed >= opts.take) {
-        this.stop();
-      }
-
-      if (opts.throttle) {
-        await new Promise((resolve) => setTimeout(resolve, opts.throttle));
+    } catch (error) {
+      if (this._config.onError) {
+        this._config.onError(parseError(error));
+      } else {
+        throw error;
       }
     }
   }
