@@ -3,15 +3,18 @@ import type { Counter, Gauge, Histogram } from "@opentelemetry/api";
 import { assert, parseError, type Result, wrap } from "trynot";
 import { ErrorHandler, type HandlerResult } from "./error-handler";
 import { ProcessingError } from "./errors";
+import { noop } from "./lib/noop";
 import { toMilliseconds, type Unit } from "./time";
 import type { MaybePromise, SyncClient, SyncEvent } from "./types";
 
 export class Controller {
-  protected _state: ControllerState;
+  protected _state: ControllerState = {
+    status: "idle",
+  };
+
   protected _config: Required<ControllerConfig>;
 
   constructor(config: ControllerConfig) {
-    this._state = { status: "idle" };
     this._config = {
       syncClient: config.syncClient,
       errorHandler:
@@ -20,9 +23,13 @@ export class Controller {
           console.error(parseError(error).message);
           return undefined;
         }),
-      eventHandler: config.eventHandler ?? (() => {}),
+      eventHandler: config.eventHandler ?? noop,
       otel: config.otel ?? {},
     };
+
+    this._config.otel.metrics?.status?.record(
+      controllerStatuses.indexOf(this._state.status),
+    );
   }
 
   get state(): ControllerState {
@@ -58,6 +65,19 @@ export class Controller {
         errorCount: 0,
       },
     };
+
+    this._config.otel.metrics?.status?.record(
+      controllerStatuses.indexOf(this._state.status),
+    );
+    this._config.otel.metrics?.isSynced?.record(0);
+    this._config.otel.metrics?.syncTipSlot?.record(0);
+    this._config.otel.metrics?.syncTipHeight?.record(0);
+    this._config.otel.metrics?.chainTipSlot?.record(0);
+    this._config.otel.metrics?.chainTipHeight?.record(0);
+    this._config.otel.metrics?.filterCount?.record(0);
+    this._config.otel.metrics?.applyCount?.record(0);
+    this._config.otel.metrics?.resetCount?.record(0);
+    this._config.otel.metrics?.errorCount?.record(0);
 
     this._emitEvent({
       type: "controller.started",
@@ -128,6 +148,10 @@ export class Controller {
           counters: this._state.counters,
         };
 
+        this._config.otel.metrics?.status?.record(
+          controllerStatuses.indexOf(this._state.status),
+        );
+
         this._emitEvent({
           type: "controller.resumed",
           data: { resumePoint, counters: this._state.counters },
@@ -164,7 +188,17 @@ export class Controller {
     try {
       let done = false;
 
+      let lastArrivalTime: number | undefined;
+
       for await (const event of this._state.generator) {
+        const arrivalTime = Date.now();
+        if (typeof lastArrivalTime === "number") {
+          this._config.otel.metrics?.arrivalTime?.record(
+            arrivalTime - lastArrivalTime,
+          );
+        }
+        lastArrivalTime = arrivalTime;
+
         this._emitEvent({
           type: "event.received",
           data: { event: event.type },
@@ -173,6 +207,9 @@ export class Controller {
         try {
           if (opts.filter && !(await opts.filter(event))) {
             this._state.counters.filterCount += 1;
+            this._config.otel.metrics?.filterCount?.record(
+              this._state.counters.filterCount,
+            );
             this._emitEvent({
               type: "event.filtered",
               data: { event: event.type },
@@ -191,6 +228,8 @@ export class Controller {
 
           const processingTime = Date.now() - processingStart;
 
+          this._config.otel.metrics?.processingTime?.record(processingTime);
+
           this._emitEvent({
             type: "event.processed",
             data: {
@@ -201,12 +240,31 @@ export class Controller {
           });
 
           this._state.meta.chainTip = event.tip;
+          if (typeof event.tip === "object") {
+            this._config.otel.metrics?.chainTipSlot?.record(event.tip.slot);
+            this._config.otel.metrics?.chainTipHeight?.record(event.tip.height);
+          }
           if (event.type === "apply" && event.block.type !== "ebb") {
             this._state.meta.syncTip = {
               slot: event.block.slot,
               id: event.block.id,
               height: event.block.height,
             };
+            this._config.otel.metrics?.syncTipSlot?.record(event.block.slot);
+            this._config.otel.metrics?.syncTipHeight?.record(
+              event.block.height,
+            );
+          }
+
+          if (
+            event.type === "apply" &&
+            event.block.type !== "ebb" &&
+            typeof event.tip !== "string" &&
+            event.block.height === event.tip.height
+          ) {
+            this._config.otel.metrics?.isSynced?.record(1);
+          } else {
+            this._config.otel.metrics?.isSynced?.record(0);
           }
 
           const processedCount =
@@ -215,18 +273,14 @@ export class Controller {
             this._state.meta.startingPoint = this._state.meta.syncTip;
           }
 
-          switch (event.type) {
-            case "apply": {
-              this._state.counters.applyCount += 1;
-              break;
-            }
-            case "reset": {
-              this._state.counters.resetCount += 1;
-              break;
-            }
-          }
+          const eventCounter = `${event.type}Count` as const;
+          this._state.counters[eventCounter] += 1;
+          this._config.otel.metrics?.[eventCounter]?.record(
+            this._state.counters[eventCounter],
+          );
 
           this._config.errorHandler.reset();
+          this._config.otel.metrics?.errorCount?.record(0);
 
           if (
             res?.done ||
@@ -261,6 +315,9 @@ export class Controller {
         meta: this._state.meta,
         counters: this._state.counters,
       };
+      this._config.otel.metrics?.status?.record(
+        controllerStatuses.indexOf(this._state.status),
+      );
 
       if (status === "done") {
         this._emitEvent({
@@ -271,6 +328,9 @@ export class Controller {
     } catch (error) {
       const parsedError = parseError(error);
       this._state.counters.errorCount += 1;
+      this._config.otel.metrics?.errorCount?.record(
+        this._state.counters.errorCount,
+      );
       this._state.meta.lastError = parsedError;
 
       this._emitEvent({
@@ -327,6 +387,9 @@ export class Controller {
         meta: this._state.meta,
         counters: this._state.counters,
       };
+      this._config.otel.metrics?.status?.record(
+        controllerStatuses.indexOf(this._state.status),
+      );
 
       this._emitEvent({
         type: "controller.completed",
@@ -562,22 +625,22 @@ const metrics = {
   },
   // Counters
   applyCount: {
-    type: "counter",
+    type: "gauge",
     name: "apply_count",
     description: "Number of apply events",
   },
   resetCount: {
-    type: "counter",
+    type: "gauge",
     name: "reset_count",
     description: "Number of reset events",
   },
   filterCount: {
-    type: "counter",
+    type: "gauge",
     name: "filter_count",
     description: "Number of filtered events",
   },
   errorCount: {
-    type: "counter",
+    type: "gauge",
     name: "error_count",
     description: "Number of errors",
   },
