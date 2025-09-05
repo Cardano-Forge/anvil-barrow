@@ -7,7 +7,7 @@ import { ProcessingError, SocketClosedError, SocketError } from "./errors";
 import { OgmiosSyncClient } from "./ogmios";
 
 const logger = pino({
-  level: "info",
+  level: "trace",
   transport: {
     target: "pino-pretty",
     options: {
@@ -54,7 +54,7 @@ const point: Schema.PointOrOrigin = {
     controller.start({
       fn: processEvent,
       point,
-      throttle: [0.5, "seconds"],
+      throttle: [100, "milliseconds"],
       // filter: (event) => event.type === "apply" && event.block.height === 3859660,
       takeUntil: ({ state }) => state.counters.applyCount >= 10,
     }),
@@ -72,7 +72,7 @@ let processed = 0;
 function processEvent() {
   processed++;
   if (processed === 4) {
-    throw new Error("processing error");
+    // throw new Error("processing error");
   }
 }
 
