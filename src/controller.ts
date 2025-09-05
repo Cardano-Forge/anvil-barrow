@@ -1,4 +1,5 @@
 import type { Schema } from "@cardano-ogmios/client";
+import type { Counter, Gauge, Histogram } from "@opentelemetry/api";
 import { assert, parseError, type Result, wrap } from "trynot";
 import { ErrorHandler, type HandlerResult } from "./error-handler";
 import { ProcessingError } from "./errors";
@@ -20,6 +21,7 @@ export class Controller {
           return undefined;
         }),
       eventHandler: config.eventHandler ?? (() => {}),
+      otel: config.otel ?? {},
     };
   }
 
@@ -484,6 +486,7 @@ export type ControllerConfig = {
   syncClient: SyncClient;
   errorHandler?: ErrorHandler;
   eventHandler?: (event: ControllerEvent) => void;
+  otel?: Otel;
 };
 
 export type ControllerStartOpts = {
@@ -512,6 +515,15 @@ export type ControllerStateBase = {
   lastError: Error | undefined;
 };
 
+export const controllerStatuses = [
+  "idle",
+  "running",
+  "paused",
+  "done",
+  "crashed",
+] as const;
+export type ControllerStatus = (typeof controllerStatuses)[number];
+
 export type ControllerStateIdle = { status: "idle" };
 
 export type ControllerStateRunning = {
@@ -529,3 +541,96 @@ export type ControllerState =
   | ControllerStateIdle
   | ControllerStateRunning
   | ControllerStateStopped;
+
+export type MetricTypes = {
+  gauge: Gauge;
+  counter: Counter;
+  histogram: Histogram;
+};
+
+export type Metric = {
+  type: keyof MetricTypes;
+  name: string;
+  description: string;
+  unit?: string;
+};
+
+const metrics = {
+  status: {
+    type: "gauge",
+    name: "status",
+    description: `Controller status (${controllerStatuses.map((s, i) => `${s} = ${i}`).join(", ")})`,
+  },
+  syncTipSlot: {
+    type: "gauge",
+    name: "sync_tip_slot",
+    description: "Sync tip slot",
+  },
+  syncTipHeight: {
+    type: "gauge",
+    name: "sync_tip_height",
+    description: "Sync tip height",
+  },
+  chainTipSlot: {
+    type: "gauge",
+    name: "chain_tip_slot",
+    description: "Chain tip slot",
+  },
+  chainTipHeight: {
+    type: "gauge",
+    name: "chain_tip_height",
+    description: "Chain tip height",
+  },
+  isSynced: {
+    type: "gauge",
+    name: "is_synced",
+    description: "Is synced (1 = yes, 0 = no)",
+  },
+  retryCount: {
+    type: "counter",
+    name: "retry_count",
+    description:
+      "Number of errors caught since the last successfully processed event",
+  },
+  errorCount: {
+    type: "counter",
+    name: "error_count",
+    description: "Number of errors caught since the controller started",
+  },
+  applyCount: {
+    type: "counter",
+    name: "apply_count",
+    description:
+      "Number of apply events processed since the controller started",
+  },
+  resetCount: {
+    type: "counter",
+    name: "reset_count",
+    description:
+      "Number of reset events processed since the controller started",
+  },
+  filterCount: {
+    type: "counter",
+    name: "filter_count",
+    description: "Number of events filtered since the controller started",
+  },
+  processingTime: {
+    type: "histogram",
+    name: "processing_time",
+    description: "Time it takes to process an event",
+    unit: "milliseconds",
+  },
+  arrivalTime: {
+    type: "histogram",
+    name: "arrival_time",
+    description: "Time it takes to receive an event",
+    unit: "milliseconds",
+  },
+} satisfies Record<string, Metric>;
+export type Metrics = typeof metrics;
+
+export type Otel = {
+  metrics?: {
+    [K in keyof Metrics]?: MetricTypes[Metrics[K]["type"]];
+  };
+};
