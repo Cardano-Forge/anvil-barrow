@@ -42,17 +42,21 @@ export class Controller {
 
     this._state = {
       status: "running",
-      startOpts,
       generator: this._config.syncClient.sync({ point }),
       promise: Promise.resolve(),
-      startingPoint: point,
-      syncTip: undefined,
-      chainTip: undefined,
-      filterCount: 0,
-      applyCount: 0,
-      resetCount: 0,
-      errorCount: 0,
-      lastError: undefined,
+      meta: {
+        startOpts,
+        startingPoint: point,
+        syncTip: undefined,
+        chainTip: undefined,
+        lastError: undefined,
+      },
+      counters: {
+        filterCount: 0,
+        applyCount: 0,
+        resetCount: 0,
+        errorCount: 0,
+      },
     };
 
     this._emitEvent({
@@ -97,12 +101,7 @@ export class Controller {
           type: "controller.paused",
           data: {
             reason: "user_requested",
-            stats: {
-              applyCount: this._state.applyCount,
-              resetCount: this._state.resetCount,
-              filterCount: this._state.filterCount,
-              errorCount: this._state.errorCount,
-            },
+            counters: this._state.counters,
           },
         });
         return this._state;
@@ -118,37 +117,23 @@ export class Controller {
   async resume(): Promise<Result<ControllerStateRunning>> {
     switch (this._state.status) {
       case "paused": {
+        const resumePoint =
+          this._state.meta.syncTip ?? this._state.meta.startingPoint;
+
         this._state = {
           status: "running",
-          startOpts: this._state.startOpts,
-          generator: this._config.syncClient.sync({
-            point: this._state.syncTip ?? this._state.startingPoint,
-          }),
+          generator: this._config.syncClient.sync({ point: resumePoint }),
           promise: Promise.resolve(),
-          startingPoint: this._state.startingPoint,
-          syncTip: this._state.syncTip,
-          chainTip: this._state.chainTip,
-          filterCount: this._state.filterCount,
-          applyCount: this._state.applyCount,
-          resetCount: this._state.resetCount,
-          errorCount: this._state.errorCount,
-          lastError: this._state.lastError,
+          meta: this._state.meta,
+          counters: this._state.counters,
         };
 
         this._emitEvent({
           type: "controller.resumed",
-          data: {
-            resumePoint: this._state.syncTip ?? this._state.startingPoint,
-            stats: {
-              applyCount: this._state.applyCount,
-              resetCount: this._state.resetCount,
-              filterCount: this._state.filterCount,
-              errorCount: this._state.errorCount,
-            },
-          },
+          data: { resumePoint, counters: this._state.counters },
         });
 
-        this._state.promise = this._runSyncLoop(this._state.startOpts);
+        this._state.promise = this._runSyncLoop(this._state.meta.startOpts);
 
         return this._state;
       }
@@ -187,7 +172,7 @@ export class Controller {
 
         try {
           if (opts.filter && !(await opts.filter(event))) {
-            this._state.filterCount += 1;
+            this._state.counters.filterCount += 1;
             this._emitEvent({
               type: "event.filtered",
               data: { event: event.type },
@@ -215,9 +200,9 @@ export class Controller {
             },
           });
 
-          this._state.chainTip = event.tip;
+          this._state.meta.chainTip = event.tip;
           if (event.type === "apply" && event.block.type !== "ebb") {
-            this._state.syncTip = {
+            this._state.meta.syncTip = {
               slot: event.block.slot,
               id: event.block.id,
               height: event.block.height,
@@ -225,18 +210,18 @@ export class Controller {
           }
 
           const processedCount =
-            this._state.applyCount + this._state.resetCount;
-          if (processedCount === 0 && !this._state.startingPoint) {
-            this._state.startingPoint = this._state.syncTip;
+            this._state.counters.applyCount + this._state.counters.resetCount;
+          if (processedCount === 0 && !this._state.meta.startingPoint) {
+            this._state.meta.startingPoint = this._state.meta.syncTip;
           }
 
           switch (event.type) {
             case "apply": {
-              this._state.applyCount += 1;
+              this._state.counters.applyCount += 1;
               break;
             }
             case "reset": {
-              this._state.resetCount += 1;
+              this._state.counters.resetCount += 1;
               break;
             }
           }
@@ -272,36 +257,21 @@ export class Controller {
 
       this._state = {
         status,
-        startOpts: this._state.startOpts,
-        startingPoint: this._state.startingPoint,
-        syncTip: this._state.syncTip,
-        chainTip: this._state.chainTip,
-        filterCount: this._state.filterCount,
-        applyCount: this._state.applyCount,
-        resetCount: this._state.resetCount,
-        errorCount: this._state.errorCount,
-        lastError: this._state.lastError,
         stoppedAt,
+        meta: this._state.meta,
+        counters: this._state.counters,
       };
 
       if (status === "done") {
         this._emitEvent({
           type: "controller.completed",
-          data: {
-            status: "done",
-            stats: {
-              applyCount: this._state.applyCount,
-              resetCount: this._state.resetCount,
-              filterCount: this._state.filterCount,
-              errorCount: this._state.errorCount,
-            },
-          },
+          data: { status: "done", counters: this._state.counters },
         });
       }
     } catch (error) {
       const parsedError = parseError(error);
-      this._state.errorCount += 1;
-      this._state.lastError = parsedError;
+      this._state.counters.errorCount += 1;
+      this._state.meta.lastError = parsedError;
 
       this._emitEvent({
         type: "error.caught",
@@ -322,7 +292,7 @@ export class Controller {
               type: "retry.scheduled",
               data: {
                 delay: handlerResult.retry.delay,
-                attempt: this._state.errorCount,
+                attempt: this._state.counters.errorCount,
                 originalError: parsedError,
               },
             });
@@ -331,12 +301,13 @@ export class Controller {
             });
           }
 
-          const resumePoint = this._state.syncTip ?? this._state.startingPoint;
+          const resumePoint =
+            this._state.meta.syncTip ?? this._state.meta.startingPoint;
 
           this._emitEvent({
             type: "retry.started",
             data: {
-              attempt: this._state.errorCount,
+              attempt: this._state.counters.errorCount,
               resumePoint,
               originalError: parsedError,
             },
@@ -352,41 +323,22 @@ export class Controller {
 
       this._state = {
         status: "crashed",
-        startOpts: this._state.startOpts,
-        startingPoint: this._state.startingPoint,
-        syncTip: this._state.syncTip,
-        chainTip: this._state.chainTip,
-        filterCount: this._state.filterCount,
-        applyCount: this._state.applyCount,
-        resetCount: this._state.resetCount,
-        errorCount: this._state.errorCount,
-        lastError: this._state.lastError,
         stoppedAt: Date.now(),
+        meta: this._state.meta,
+        counters: this._state.counters,
       };
 
       this._emitEvent({
         type: "controller.completed",
         data: {
           status: "crashed",
-          stats: {
-            applyCount: this._state.applyCount,
-            resetCount: this._state.resetCount,
-            filterCount: this._state.filterCount,
-            errorCount: this._state.errorCount,
-          },
-          lastError: this._state.lastError,
+          counters: this._state.counters,
+          lastError: this._state.meta.lastError,
         },
       });
     }
   }
 }
-
-export type ControllerStats = {
-  applyCount: number;
-  resetCount: number;
-  filterCount: number;
-  errorCount: number;
-};
 
 export type ControllerEvent =
   | {
@@ -402,7 +354,7 @@ export type ControllerEvent =
       timestamp: number;
       data: {
         reason: "user_requested" | "error_limit";
-        stats: ControllerStats;
+        counters: ControllerStateCounters;
       };
     }
   | {
@@ -410,7 +362,7 @@ export type ControllerEvent =
       timestamp: number;
       data: {
         resumePoint?: Schema.PointOrOrigin;
-        stats: ControllerStats;
+        counters: ControllerStateCounters;
       };
     }
   | {
@@ -418,7 +370,7 @@ export type ControllerEvent =
       timestamp: number;
       data: {
         status: "done" | "crashed";
-        stats: ControllerStats;
+        counters: ControllerStateCounters;
         lastError?: Error;
       };
     }
@@ -503,16 +455,24 @@ export type ControllerStartOpts = {
   }) => MaybePromise<boolean>;
 };
 
-export type ControllerStateBase = {
+export type ControllerStateCounters = {
+  applyCount: number;
+  resetCount: number;
+  filterCount: number;
+  errorCount: number;
+};
+
+export type ControllerStateMeta = {
   startOpts: Omit<ControllerStartOpts, "point">;
   startingPoint: Schema.PointOrOrigin | undefined;
   syncTip: Schema.Point | Schema.TipOrOrigin | undefined;
   chainTip: Schema.TipOrOrigin | undefined;
-  filterCount: number;
-  applyCount: number;
-  resetCount: number;
-  errorCount: number;
   lastError: Error | undefined;
+};
+
+export type ControllerStateBase = {
+  counters: ControllerStateCounters;
+  meta: ControllerStateMeta;
 };
 
 export const controllerStatuses = [

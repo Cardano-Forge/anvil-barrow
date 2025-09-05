@@ -56,7 +56,7 @@ const point: Schema.PointOrOrigin = {
       point,
       throttle: [0.5, "seconds"],
       // filter: (event) => event.type === "apply" && event.block.height === 3859660,
-      takeUntil: ({ state }) => state.applyCount >= 10,
+      takeUntil: ({ state }) => state.counters.applyCount >= 10,
     }),
   );
   await controller.waitForCompletion();
