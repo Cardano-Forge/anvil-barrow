@@ -516,6 +516,7 @@ export type Metric = {
 };
 
 const metrics = {
+  // metadata
   status: {
     type: "gauge",
     name: "status",
@@ -546,34 +547,7 @@ const metrics = {
     name: "is_synced",
     description: "Is synced (1 = yes, 0 = no)",
   },
-  retryCount: {
-    type: "counter",
-    name: "retry_count",
-    description:
-      "Number of errors caught since the last successfully processed event",
-  },
-  errorCount: {
-    type: "counter",
-    name: "error_count",
-    description: "Number of errors caught since the controller started",
-  },
-  applyCount: {
-    type: "counter",
-    name: "apply_count",
-    description:
-      "Number of apply events processed since the controller started",
-  },
-  resetCount: {
-    type: "counter",
-    name: "reset_count",
-    description:
-      "Number of reset events processed since the controller started",
-  },
-  filterCount: {
-    type: "counter",
-    name: "filter_count",
-    description: "Number of events filtered since the controller started",
-  },
+  // Histograms
   processingTime: {
     type: "histogram",
     name: "processing_time",
@@ -585,6 +559,27 @@ const metrics = {
     name: "arrival_time",
     description: "Time it takes to receive an event",
     unit: "milliseconds",
+  },
+  // Counters
+  applyCount: {
+    type: "counter",
+    name: "apply_count",
+    description: "Number of apply events",
+  },
+  resetCount: {
+    type: "counter",
+    name: "reset_count",
+    description: "Number of reset events",
+  },
+  filterCount: {
+    type: "counter",
+    name: "filter_count",
+    description: "Number of filtered events",
+  },
+  errorCount: {
+    type: "counter",
+    name: "error_count",
+    description: "Number of errors",
   },
 } satisfies Record<string, Metric>;
 export type Metrics = typeof metrics;
