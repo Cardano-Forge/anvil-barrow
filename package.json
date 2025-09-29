@@ -1,7 +1,7 @@
 {
-  "name": "@ada-anvil/barrow",
+  "name": "@cardano-forge/barrow",
   "description": "Chain indexing tools for the Cardano blockchain.",
-  "version": "0.0.1",
+  "version": "0.0.0",
   "author": "Cardano Forge",
   "bugs": {
     "url": "https://github.com/cardano-forge/barrow/issues"
