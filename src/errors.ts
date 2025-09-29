@@ -1,6 +1,5 @@
-import type { Schema } from "@cardano-ogmios/client";
 import { parseError } from "trynot";
-import type { SyncEvent } from "./types";
+import type { Schema, SyncEvent } from "./types";
 
 export class SocketClosedError extends Error {
   constructor(
@@ -21,13 +20,13 @@ export class SocketError extends Error {
   }
 }
 
-type ProcessingErrorEvent =
-  | { type: "apply"; block: Schema.Point | Schema.TipOrOrigin }
-  | { type: "reset"; point: Schema.PointOrOrigin };
+type ProcessingErrorEvent<TSchema extends Schema> =
+  | { type: "apply"; block: TSchema["point"] | TSchema["tipOrOrigin"] }
+  | { type: "reset"; point: TSchema["pointOrOrigin"] };
 
-export class ProcessingError extends Error {
+export class ProcessingError<TSchema extends Schema> extends Error {
   constructor(
-    public readonly event: ProcessingErrorEvent,
+    public readonly event: ProcessingErrorEvent<TSchema>,
     message: string,
     opts?: ErrorOptions,
   ) {
@@ -35,10 +34,10 @@ export class ProcessingError extends Error {
     this.name = "ProcessingError";
   }
 
-  static fromSyncEvent(
-    event: SyncEvent,
+  static fromSyncEvent<TSchema extends Schema>(
+    event: SyncEvent<TSchema>,
     originalError: unknown,
-  ): ProcessingError {
+  ): ProcessingError<TSchema> {
     return new ProcessingError(
       event.type === "apply"
         ? {

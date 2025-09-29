@@ -1,10 +1,10 @@
-import type { Schema } from "@cardano-ogmios/client";
 import { type Level, pino } from "pino";
 import { unwrap } from "trynot";
 import { Controller, type ControllerEvent } from "./controller";
+import { type OgmiosSchema, OgmiosSyncClient } from "./dep/ogmios";
 import { ErrorHandler } from "./error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "./errors";
-import { OgmiosSyncClient } from "./ogmios";
+import type { Schema } from "./types";
 
 const logger = pino({
   level: "trace",
@@ -44,7 +44,7 @@ const controller = new Controller({
   },
 });
 
-const point: Schema.PointOrOrigin = {
+const point: OgmiosSchema["pointOrOrigin"] = {
   id: "fa5a6a51632b90557665fcb33970f4fb372dff6ad0191e083ff3b6b221f2b87e",
   slot: 101163751,
 };
@@ -76,7 +76,9 @@ function processEvent() {
   }
 }
 
-function getLogLevel(event: ControllerEvent): Level {
+function getLogLevel<TSchema extends Schema>(
+  event: ControllerEvent<TSchema>,
+): Level {
   switch (event.type) {
     case "event.received":
     case "event.processing": {

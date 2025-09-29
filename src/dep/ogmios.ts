@@ -2,22 +2,39 @@ import {
   type ConnectionConfig,
   createChainSynchronizationClient,
   createInteractionContext,
+  type Schema as OgmiosSchemaNs,
 } from "@cardano-ogmios/client";
 import { isErr, parseError, wrap } from "trynot";
-import { SocketClosedError, SocketError } from "./errors";
-import type { SyncClient, SyncClientSyncOpts, SyncEvent } from "./types";
+import { SocketClosedError, SocketError } from "../errors";
+import type {
+  Schema,
+  SyncClient,
+  SyncClientSyncOpts,
+  SyncEvent,
+} from "../types";
 
-type Event = { event: SyncEvent; requestNext: () => void } | Error;
+export type OgmiosSchema = Schema<
+  OgmiosSchemaNs.Block,
+  OgmiosSchemaNs.Point,
+  OgmiosSchemaNs.Tip,
+  OgmiosSchemaNs.Origin
+>;
 
-export class OgmiosSyncClient implements SyncClient {
+type Event =
+  | { event: SyncEvent<OgmiosSchema>; requestNext: () => void }
+  | Error;
+
+export class OgmiosSyncClient implements SyncClient<OgmiosSchema> {
   constructor(protected _config: ConnectionConfig) {}
 
-  async *sync(opts: SyncClientSyncOpts = {}): AsyncGenerator<SyncEvent, void> {
+  async *sync(
+    opts: SyncClientSyncOpts<OgmiosSchema> = {},
+  ): AsyncGenerator<SyncEvent<OgmiosSchema>, void> {
     const events: Array<Event> = [];
     let waitingResolve: (() => void) | null = null;
 
     const push = (
-      item: { event: SyncEvent; requestNext: () => void } | Error,
+      item: { event: SyncEvent<OgmiosSchema>; requestNext: () => void } | Error,
     ) => {
       events.push(item);
       if (waitingResolve) {
@@ -40,11 +57,11 @@ export class OgmiosSyncClient implements SyncClient {
     const client = await wrap(
       createChainSynchronizationClient(context, {
         rollForward: async ({ block, tip }, requestNext) => {
-          const event: SyncEvent = { type: "apply", block, tip };
+          const event: SyncEvent<OgmiosSchema> = { type: "apply", block, tip };
           push({ event, requestNext });
         },
         rollBackward: async ({ point, tip }, requestNext) => {
-          const event: SyncEvent = { type: "reset", point, tip };
+          const event: SyncEvent<OgmiosSchema> = { type: "reset", point, tip };
           push({ event, requestNext });
         },
       }),
