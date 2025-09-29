@@ -1,8 +1,8 @@
-import type { Counter, Gauge, Histogram } from "@opentelemetry/api";
 import { assert, parseError, type Result, wrap } from "trynot";
 import { ErrorHandler, type HandlerResult } from "./error-handler";
 import { ProcessingError } from "./errors";
 import { noop } from "./lib/noop";
+import type { Otel } from "./otel";
 import { toMilliseconds, type Unit } from "./time";
 import type { MaybePromise, Schema, SyncClient, SyncEvent } from "./types";
 
@@ -563,91 +563,3 @@ export type ControllerState<TSchema extends Schema = Schema> =
   | ControllerStateIdle
   | ControllerStateRunning<TSchema>
   | ControllerStateStopped<TSchema>;
-
-export type MetricTypes = {
-  gauge: Gauge;
-  counter: Counter;
-  histogram: Histogram;
-};
-
-export type Metric = {
-  type: keyof MetricTypes;
-  name: string;
-  description: string;
-  unit?: string;
-};
-
-const metrics = {
-  // metadata
-  status: {
-    type: "gauge",
-    name: "status",
-    description: `Controller status (${controllerStatuses.map((s, i) => `${s} = ${i}`).join(", ")})`,
-  },
-  syncTipSlot: {
-    type: "gauge",
-    name: "sync_tip_slot",
-    description: "Sync tip slot",
-  },
-  syncTipHeight: {
-    type: "gauge",
-    name: "sync_tip_height",
-    description: "Sync tip height",
-  },
-  chainTipSlot: {
-    type: "gauge",
-    name: "chain_tip_slot",
-    description: "Chain tip slot",
-  },
-  chainTipHeight: {
-    type: "gauge",
-    name: "chain_tip_height",
-    description: "Chain tip height",
-  },
-  isSynced: {
-    type: "gauge",
-    name: "is_synced",
-    description: "Is synced (1 = yes, 0 = no)",
-  },
-  // Histograms
-  processingTime: {
-    type: "histogram",
-    name: "processing_time",
-    description: "Time it takes to process an event",
-    unit: "milliseconds",
-  },
-  arrivalTime: {
-    type: "histogram",
-    name: "arrival_time",
-    description: "Time it takes to receive an event",
-    unit: "milliseconds",
-  },
-  // Counters
-  applyCount: {
-    type: "gauge",
-    name: "apply_count",
-    description: "Number of apply events",
-  },
-  resetCount: {
-    type: "gauge",
-    name: "reset_count",
-    description: "Number of reset events",
-  },
-  filterCount: {
-    type: "gauge",
-    name: "filter_count",
-    description: "Number of filtered events",
-  },
-  errorCount: {
-    type: "gauge",
-    name: "error_count",
-    description: "Number of errors",
-  },
-} satisfies Record<string, Metric>;
-export type Metrics = typeof metrics;
-
-export type Otel = {
-  metrics?: {
-    [K in keyof Metrics]?: MetricTypes[Metrics[K]["type"]];
-  };
-};
