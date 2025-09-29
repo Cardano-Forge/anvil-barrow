@@ -27,17 +27,7 @@ const controller = new Controller({
       SocketClosedError,
       ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, exponential: true }),
     ),
-  eventHandler: controllerLogger(
-    pino({
-      level: "trace",
-      transport: {
-        target: "pino-pretty",
-        options: {
-          colorize: true,
-        },
-      },
-    }),
-  ),
+  eventHandler: controllerLogger(pino({ level: "trace" })),
   otel: controllerOtel(),
 });
 
