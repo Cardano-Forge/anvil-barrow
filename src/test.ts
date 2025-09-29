@@ -1,47 +1,42 @@
-import { type Level, pino } from "pino";
-import { unwrap } from "trynot";
-import { Controller, type ControllerEvent } from "./controller";
+import { pino } from "pino";
+import { assert, unwrap } from "trynot";
+import { Controller } from "./controller";
 import { type OgmiosSchema, OgmiosSyncClient } from "./dep/ogmios";
+import { controllerLogger } from "./dep/pino";
 import { ErrorHandler } from "./error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "./errors";
-import type { Schema } from "./types";
-
-const logger = pino({
-  level: "trace",
-  transport: {
-    target: "pino-pretty",
-    options: {
-      colorize: true,
-    },
-  },
-});
-
-const syncClient = new OgmiosSyncClient({
-  host: process.env.OGMIOS_NODE_HOST,
-  port: Number(process.env.OGMIOS_NODE_PORT),
-  tls: Boolean(process.env.OGMIOS_NODE_TLS),
-});
-
-const errorHandler = new ErrorHandler()
-  .register(
-    ProcessingError,
-    ErrorHandler.retry({ maxRetries: 1, baseDelay: 5000, persistent: true }),
-  )
-  .register(
-    SocketError,
-    ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, exponential: true }),
-  )
-  .register(
-    SocketClosedError,
-    ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, exponential: true }),
-  );
+import { noop } from "./lib/noop";
 
 const controller = new Controller({
-  syncClient,
-  errorHandler,
-  eventHandler: (event) => {
-    logger[getLogLevel(event)](event.data, event.type);
-  },
+  syncClient: new OgmiosSyncClient({
+    host: process.env.OGMIOS_NODE_HOST,
+    port: Number(process.env.OGMIOS_NODE_PORT),
+    tls: Boolean(process.env.OGMIOS_NODE_TLS),
+  }),
+  errorHandler: new ErrorHandler()
+    .register(
+      ProcessingError,
+      ErrorHandler.retry({ maxRetries: 1, baseDelay: 5000, persistent: true }),
+    )
+    .register(
+      SocketError,
+      ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, exponential: true }),
+    )
+    .register(
+      SocketClosedError,
+      ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, exponential: true }),
+    ),
+  eventHandler: controllerLogger(
+    pino({
+      level: "trace",
+      transport: {
+        target: "pino-pretty",
+        options: {
+          colorize: true,
+        },
+      },
+    }),
+  ),
 });
 
 const point: OgmiosSchema["pointOrOrigin"] = {
@@ -49,10 +44,10 @@ const point: OgmiosSchema["pointOrOrigin"] = {
   slot: 101163751,
 };
 
-(async () => {
+async function main() {
   await unwrap(
     controller.start({
-      fn: processEvent,
+      fn: noop,
       point,
       throttle: [100, "milliseconds"],
       // filter: (event) => event.type === "apply" && event.block.height === 3859660,
@@ -60,53 +55,9 @@ const point: OgmiosSchema["pointOrOrigin"] = {
     }),
   );
   await controller.waitForCompletion();
-  if (controller.state.status === "paused") {
-    await unwrap(controller.resume());
-    await controller.waitForCompletion();
-  }
-})()
+  assert(controller.state.status === "done");
+}
+
+main()
   .catch(console.error)
   .finally(() => process.exit(0));
-
-let processed = 0;
-function processEvent() {
-  processed++;
-  if (processed === 4) {
-    // throw new Error("processing error");
-  }
-}
-
-function getLogLevel<TSchema extends Schema>(
-  event: ControllerEvent<TSchema>,
-): Level {
-  switch (event.type) {
-    case "event.received":
-    case "event.processing": {
-      return "trace";
-    }
-    case "event.filtered":
-    case "event.processed":
-    case "throttle.delay": {
-      return "debug";
-    }
-    case "controller.started":
-    case "controller.resumed":
-    case "retry.started": {
-      return "info";
-    }
-    case "controller.paused":
-    case "error.handled":
-    case "retry.scheduled": {
-      return "warn";
-    }
-    case "error.caught": {
-      return "error";
-    }
-    case "controller.completed": {
-      return event.data.status === "crashed" ? "error" : "info";
-    }
-    default: {
-      return "info";
-    }
-  }
-}
