@@ -37,7 +37,8 @@
     "lint": "biome check --write .",
     "test": "vitest --run --passWithNoTests",
     "test:watch": "vitest",
-    "pre": "npm run lint && npm run check && npm run build && npm run test"
+    "pre": "npm run lint && npm run check && npm run build && npm run test",
+    "example": "tsx src/examples/index.ts"
   },
   "exports": {
     "./package.json": "./package.json",
@@ -50,13 +51,55 @@
         "types": "./index.d.mts",
         "import": "./index.mjs"
       }
+    },
+    "./ogmios": {
+      "require": {
+        "types": "./dep/ogmios.d.ts",
+        "require": "./dep/ogmios.js"
+      },
+      "import": {
+        "types": "./dep/ogmios.d.mts",
+        "import": "./dep/ogmios.mjs"
+      }
+    },
+    "./otel": {
+      "require": {
+        "types": "./dep/otel.d.ts",
+        "require": "./dep/otel.js"
+      },
+      "import": {
+        "types": "./dep/otel.d.mts",
+        "import": "./dep/otel.mjs"
+      }
+    },
+    "./pino": {
+      "require": {
+        "types": "./dep/pino.d.ts",
+        "require": "./dep/pino.js"
+      },
+      "import": {
+        "types": "./dep/pino.d.mts",
+        "import": "./dep/pino.mjs"
+      }
     }
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",
+    "@cardano-ogmios/client": "^6.13.0",
+    "@opentelemetry/api": "^1.9.0",
     "@types/node": "^24.3.0",
+    "@types/ws": "^8.18.1",
+    "pino": "^9.9.2",
     "tsup": "^8.5.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
+  },
+  "peerDependencies": {
+    "@cardano-ogmios/client": ">=6.0.0",
+    "@opentelemetry/api": ">=1.0.0",
+    "pino": ">=8.0.0"
+  },
+  "dependencies": {
+    "trynot": "^0.0.2"
   }
 }
