@@ -16,12 +16,7 @@ export class Controller<TSchema extends Schema = Schema> {
   constructor(config: ControllerConfig<TSchema>) {
     this._config = {
       syncClient: config.syncClient,
-      errorHandler:
-        config.errorHandler ??
-        new ErrorHandler((error) => {
-          console.error(parseError(error).message);
-          return undefined;
-        }),
+      errorHandler: config.errorHandler ?? new ErrorHandler(),
       eventHandler: config.eventHandler ?? noop,
       otel: config.otel ?? {},
     };
