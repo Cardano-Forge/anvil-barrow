@@ -80,17 +80,39 @@ The `ErrorHandler.retry` and `ErrorHandler.retryWithBackoff` methods take an opt
 
 ## Controller usage
 
-To define a controller, you need to create an instance of `Controller` with a configuration object.
+First, you need to create an instance of `SyncClient`.
+
+Currently, the only implementation of `SyncClient` is `OgmiosSyncClient`.
+
+Make sure you have the required dependencies installed:
+
+```bash
+npm i @cardano-ogmios/client
+```
+
+Then, create an instance of `OgmiosSyncClient` with the following properties:
+
+- `host`: The host of the Ogmios node.
+- `port`: The port of the Ogmios node.
+- `tls`: Whether to use TLS.
+
+```typescript
+import { OgmiosSyncClient } from "@cardano-forge/barrow/ogmios";
+
+const syncClient = new OgmiosSyncClient({
+  host: "localhost",
+  port: 1337,
+  tls: false,
+});
+```
+
+Next, you need to create an instance of `Controller`.
 
 ```typescript
 import { Controller } from "@cardano-forge/barrow";
 
 const controller = new Controller({
-  syncClient: new OgmiosSyncClient({
-    host: "localhost",
-    port: 1337,
-    tls: false,
-  }),
+  syncClient,
   errorHandler: new ErrorHandler(),
   eventHandler: (event) => console.log(event),
 });
@@ -120,6 +142,17 @@ await controller.waitForCompletion();
 ```
 
 The `waitForCompletion` method returns a promise that resolves when the sync job is completed.
+
+You can pause and resume the sync job by calling the `pause` and `resume` methods.
+
+```typescript
+await controller.pause();
+await controller.resume();
+```
+
+When pausing a sync job, the controller state is preserved and the sync job can be resumed at the same point it was paused.
+
+You can also run `start` on a paused sync job to reset the state and start from scratch.
 
 ## Sync job configuration
 
@@ -189,7 +222,7 @@ npm i pino
 Then, create a pino logger instance:
 
 ```typescript
-import { pinoLogger } from "@cardano-forge/barrow";
+import { pinoLogger } from "@cardano-forge/barrow/pino";
 import { pino } from "pino";
 
 const logger = pino();
@@ -219,15 +252,11 @@ First, make sure you have the required dependencies installed:
 npm i @opentelemetry/api
 ```
 
-Then, create an instance of the OpenTelemetry API:
-
-```typescript
-import { metrics } from "@opentelemetry/api";
-```
-
 You can now use the OpenTelemetry API in your controller:
 
 ```typescript
+import { otelTracingConfig } from "@cardano-forge/barrow/otel";
+
 const controller = new Controller({
   syncClient: new OgmiosSyncClient({
     host: "localhost",
