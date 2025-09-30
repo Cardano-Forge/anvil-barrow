@@ -28,7 +28,7 @@ const controller = new Controller({
       ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, exponential: true }),
     ),
   eventHandler: pinoEventLogger(pino({ level: "trace" })),
-  tracing: otelTracing(),
+  tracingConfig: otelTracing(),
 });
 
 const point: OgmiosSchema["pointOrOrigin"] = {
