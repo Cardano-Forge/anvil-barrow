@@ -92,7 +92,7 @@ export const metricDefs = {
 } satisfies Record<string, Metric>;
 export type Metrics = typeof metricDefs;
 
-export type Otel = {
+export type Tracing = {
   metrics?: {
     [K in keyof Metrics]?: MetricTypes[Metrics[K]["type"]];
   };

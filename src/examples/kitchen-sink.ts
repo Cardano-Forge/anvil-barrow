@@ -2,8 +2,8 @@ import { pino } from "pino";
 import { assert, unwrap } from "trynot";
 import { Controller } from "../controller";
 import { type OgmiosSchema, OgmiosSyncClient } from "../dep/ogmios";
-import { controllerOtel } from "../dep/otel";
-import { controllerLogger } from "../dep/pino";
+import { otelTracing } from "../dep/otel";
+import { pinoEventLogger } from "../dep/pino";
 import { ErrorHandler } from "../error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "../errors";
 import { noop } from "../lib/noop";
@@ -27,8 +27,8 @@ const controller = new Controller({
       SocketClosedError,
       ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, exponential: true }),
     ),
-  eventHandler: controllerLogger(pino({ level: "trace" })),
-  otel: controllerOtel(),
+  eventHandler: pinoEventLogger(pino({ level: "trace" })),
+  tracing: otelTracing(),
 });
 
 const point: OgmiosSchema["pointOrOrigin"] = {

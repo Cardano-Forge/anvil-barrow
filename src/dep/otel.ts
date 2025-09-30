@@ -6,13 +6,13 @@ import {
   ValueType,
 } from "@opentelemetry/api";
 import { entries } from "../lib/entries";
-import { metricDefs, type Otel } from "../otel";
+import { metricDefs, type Tracing } from "../tracing";
 
-export type ControllerOtelInput =
+export type CreateOtelTracingInput =
   | { name: string; version?: string; opts?: MeterOptions }
   | Meter;
 
-export function controllerOtel(input?: ControllerOtelInput): Otel {
+export function otelTracing(input?: CreateOtelTracingInput): Tracing {
   let meter: Meter;
   if (!input) {
     meter = metrics.getMeter("anvil-barrow");
@@ -23,7 +23,7 @@ export function controllerOtel(input?: ControllerOtelInput): Otel {
   }
 
   return {
-    metrics: entries(metricDefs).reduce<NonNullable<Otel["metrics"]>>(
+    metrics: entries(metricDefs).reduce<NonNullable<Tracing["metrics"]>>(
       (acc, [name, metric]) => {
         const opts: MetricOptions = {
           description: metric.description,

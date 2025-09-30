@@ -2,8 +2,8 @@ import { assert, parseError, type Result, wrap } from "trynot";
 import { ErrorHandler, type HandlerResult } from "./error-handler";
 import { ProcessingError } from "./errors";
 import { noop } from "./lib/noop";
-import type { Otel } from "./otel";
 import { toMilliseconds, type Unit } from "./time";
+import type { Tracing } from "./tracing";
 import type { MaybePromise, Schema, SyncClient, SyncEvent } from "./types";
 
 export class Controller<TSchema extends Schema = Schema> {
@@ -18,10 +18,10 @@ export class Controller<TSchema extends Schema = Schema> {
       syncClient: config.syncClient,
       errorHandler: config.errorHandler ?? new ErrorHandler(),
       eventHandler: config.eventHandler ?? noop,
-      otel: config.otel ?? {},
+      tracing: config.tracing ?? {},
     };
 
-    this._config.otel.metrics?.status?.record(
+    this._config.tracing.metrics?.status?.record(
       controllerStatuses.indexOf(this._state.status),
     );
   }
@@ -60,18 +60,18 @@ export class Controller<TSchema extends Schema = Schema> {
       },
     };
 
-    this._config.otel.metrics?.status?.record(
+    this._config.tracing.metrics?.status?.record(
       controllerStatuses.indexOf(this._state.status),
     );
-    this._config.otel.metrics?.isSynced?.record(0);
-    this._config.otel.metrics?.syncTipSlot?.record(0);
-    this._config.otel.metrics?.syncTipHeight?.record(0);
-    this._config.otel.metrics?.chainTipSlot?.record(0);
-    this._config.otel.metrics?.chainTipHeight?.record(0);
-    this._config.otel.metrics?.filterCount?.record(0);
-    this._config.otel.metrics?.applyCount?.record(0);
-    this._config.otel.metrics?.resetCount?.record(0);
-    this._config.otel.metrics?.errorCount?.record(0);
+    this._config.tracing.metrics?.isSynced?.record(0);
+    this._config.tracing.metrics?.syncTipSlot?.record(0);
+    this._config.tracing.metrics?.syncTipHeight?.record(0);
+    this._config.tracing.metrics?.chainTipSlot?.record(0);
+    this._config.tracing.metrics?.chainTipHeight?.record(0);
+    this._config.tracing.metrics?.filterCount?.record(0);
+    this._config.tracing.metrics?.applyCount?.record(0);
+    this._config.tracing.metrics?.resetCount?.record(0);
+    this._config.tracing.metrics?.errorCount?.record(0);
 
     this._emitEvent({
       type: "controller.started",
@@ -142,7 +142,7 @@ export class Controller<TSchema extends Schema = Schema> {
           counters: this._state.counters,
         };
 
-        this._config.otel.metrics?.status?.record(
+        this._config.tracing.metrics?.status?.record(
           controllerStatuses.indexOf(this._state.status),
         );
 
@@ -187,7 +187,7 @@ export class Controller<TSchema extends Schema = Schema> {
       for await (const event of this._state.generator) {
         const arrivalTime = Date.now();
         if (typeof lastArrivalTime === "number") {
-          this._config.otel.metrics?.arrivalTime?.record(
+          this._config.tracing.metrics?.arrivalTime?.record(
             arrivalTime - lastArrivalTime,
           );
         }
@@ -201,7 +201,7 @@ export class Controller<TSchema extends Schema = Schema> {
         try {
           if (opts.filter && !(await opts.filter(event))) {
             this._state.counters.filterCount += 1;
-            this._config.otel.metrics?.filterCount?.record(
+            this._config.tracing.metrics?.filterCount?.record(
               this._state.counters.filterCount,
             );
             this._emitEvent({
@@ -222,7 +222,7 @@ export class Controller<TSchema extends Schema = Schema> {
 
           const processingTime = Date.now() - processingStart;
 
-          this._config.otel.metrics?.processingTime?.record(processingTime);
+          this._config.tracing.metrics?.processingTime?.record(processingTime);
 
           this._emitEvent({
             type: "event.processed",
@@ -235,8 +235,10 @@ export class Controller<TSchema extends Schema = Schema> {
 
           this._state.meta.chainTip = event.tip;
           if (typeof event.tip === "object") {
-            this._config.otel.metrics?.chainTipSlot?.record(event.tip.slot);
-            this._config.otel.metrics?.chainTipHeight?.record(event.tip.height);
+            this._config.tracing.metrics?.chainTipSlot?.record(event.tip.slot);
+            this._config.tracing.metrics?.chainTipHeight?.record(
+              event.tip.height,
+            );
           }
           if (event.type === "apply" && event.block.type !== "ebb") {
             this._state.meta.syncTip = {
@@ -244,8 +246,8 @@ export class Controller<TSchema extends Schema = Schema> {
               id: event.block.id,
               height: event.block.height,
             };
-            this._config.otel.metrics?.syncTipSlot?.record(event.block.slot);
-            this._config.otel.metrics?.syncTipHeight?.record(
+            this._config.tracing.metrics?.syncTipSlot?.record(event.block.slot);
+            this._config.tracing.metrics?.syncTipHeight?.record(
               event.block.height,
             );
           }
@@ -256,9 +258,9 @@ export class Controller<TSchema extends Schema = Schema> {
             typeof event.tip !== "string" &&
             event.block.height === event.tip.height
           ) {
-            this._config.otel.metrics?.isSynced?.record(1);
+            this._config.tracing.metrics?.isSynced?.record(1);
           } else {
-            this._config.otel.metrics?.isSynced?.record(0);
+            this._config.tracing.metrics?.isSynced?.record(0);
           }
 
           const processedCount =
@@ -269,12 +271,12 @@ export class Controller<TSchema extends Schema = Schema> {
 
           const eventCounter = `${event.type}Count` as const;
           this._state.counters[eventCounter] += 1;
-          this._config.otel.metrics?.[eventCounter]?.record(
+          this._config.tracing.metrics?.[eventCounter]?.record(
             this._state.counters[eventCounter],
           );
 
           this._config.errorHandler.reset();
-          this._config.otel.metrics?.errorCount?.record(0);
+          this._config.tracing.metrics?.errorCount?.record(0);
 
           if (
             res?.done ||
@@ -309,7 +311,7 @@ export class Controller<TSchema extends Schema = Schema> {
         meta: this._state.meta,
         counters: this._state.counters,
       };
-      this._config.otel.metrics?.status?.record(
+      this._config.tracing.metrics?.status?.record(
         controllerStatuses.indexOf(this._state.status),
       );
 
@@ -322,7 +324,7 @@ export class Controller<TSchema extends Schema = Schema> {
     } catch (error) {
       const parsedError = parseError(error);
       this._state.counters.errorCount += 1;
-      this._config.otel.metrics?.errorCount?.record(
+      this._config.tracing.metrics?.errorCount?.record(
         this._state.counters.errorCount,
       );
       this._state.meta.lastError = parsedError;
@@ -381,7 +383,7 @@ export class Controller<TSchema extends Schema = Schema> {
         meta: this._state.meta,
         counters: this._state.counters,
       };
-      this._config.otel.metrics?.status?.record(
+      this._config.tracing.metrics?.status?.record(
         controllerStatuses.indexOf(this._state.status),
       );
 
@@ -495,7 +497,7 @@ export type ControllerConfig<TSchema extends Schema = Schema> = {
   syncClient: SyncClient<TSchema>;
   errorHandler?: ErrorHandler;
   eventHandler?: (event: ControllerEvent<TSchema>) => void;
-  otel?: Otel;
+  tracing?: Tracing;
 };
 
 export type ControllerStartOpts<TSchema extends Schema = Schema> = {
