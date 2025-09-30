@@ -12,7 +12,9 @@ export type CreateOtelTracingInput =
   | { name: string; version?: string; opts?: MeterOptions }
   | Meter;
 
-export function otelTracing(input?: CreateOtelTracingInput): TracingConfig {
+export function otelTracingConfig(
+  input?: CreateOtelTracingInput,
+): TracingConfig {
   let meter: Meter;
   if (!input) {
     meter = metrics.getMeter("anvil-barrow");

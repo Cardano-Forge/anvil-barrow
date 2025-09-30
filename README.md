@@ -28,7 +28,7 @@ It takes a configuration object as its only argument, which includes the followi
 
 - `syncClient`: An instance of `SyncClient` that provides a generator for sync events.
 - `errorHandler` (optional): An instance of `ErrorHandler` that handles errors during sync events.
-- `eventHandler` (optional): A function that handles sync events.
+- `logger` (optional): A function that handles log events.
 - `tracingConfig` (optional): An object that configures tracing for the controller.
 
 ### SyncClient
@@ -173,6 +173,93 @@ A schema is an object that represents the structure of sync events. It includes 
 - `tip`: The tip of the chain.
 - `pointOrOrigin`: The point or origin that was synced.
 - `tipOrOrigin`: The tip or origin of the chain.
+
+## Logger
+
+Barrow provides a built-in logger that uses [Pino](https://getpino.io) for logging.
+
+### Usage
+
+First, make sur you have the required dependencies installed:
+
+```bash
+npm i pino
+```
+
+Then, create a pino logger instance:
+
+```typescript
+import { pinoLogger } from "@cardano-forge/barrow";
+import { pino } from "pino";
+
+const logger = pino();
+```
+
+You can now use the logger in your controller:
+
+```typescript
+const controller = new Controller({
+  syncClient: new OgmiosSyncClient({
+    host: "localhost",
+    port: 1337,
+    tls: false,
+  }),
+  logger: pinoLogger(logger),
+});
+
+## Tracing
+
+Barrow provides a built-in tracing system that uses [OpenTelemetry](https://opentelemetry.io) for metrics and tracing.
+
+### Usage
+
+First, make sure you have the required dependencies installed:
+
+```bash
+npm i @opentelemetry/api
+```
+
+Then, create an instance of the OpenTelemetry API:
+
+```typescript
+import { metrics } from "@opentelemetry/api";
+```
+
+You can now use the OpenTelemetry API in your controller:
+
+```typescript
+const controller = new Controller({
+  syncClient: new OgmiosSyncClient({
+    host: "localhost",
+    port: 1337,
+    tls: false,
+  }),
+  tracingConfig: otelTracingConfig(),
+});
+```
+
+The `otelTracingConfig` function takes an optional input that can be either a `Meter` instance or an object with the following properties:
+
+- `name`: The name of the meter.
+- `version` (optional): The version of the meter.
+- `opts` (optional): The options for the meter.
+
+### Metrics
+
+Barrow provides the following built-in metrics:
+
+- `status`: The status of the controller.
+- `sync_tip_slot`: The slot number of the sync tip.
+- `sync_tip_height`: The height of the sync tip.
+- `chain_tip_slot`: The slot number of the chain tip.
+- `chain_tip_height`: The height of the chain tip.
+- `is_synced`: Whether the controller is synced.
+- `processing_time`: The time it takes to process an event.
+- `arrival_time`: The time it takes to receive an event.
+- `apply_count`: The number of apply events.
+- `reset_count`: The number of reset events.
+- `filter_count`: The number of filtered events.
+- `error_count`: The number of errors.
 
 ## Example
 

@@ -1,11 +1,11 @@
 import type { Logger } from "pino";
-import type { ControllerEvent } from "../controller";
+import type { LogEvent } from "../controller";
 import { getLogLevel } from "../logs";
 import type { Schema } from "../types";
 
-export function pinoEventLogger<TSchema extends Schema>(logger: Logger) {
-  return (event: ControllerEvent<TSchema>) => {
-    const level = getLogLevel(event);
-    logger[level](event.data, event.type);
+export function pinoLogger<TSchema extends Schema>(logger: Logger) {
+  return (logEvent: LogEvent<TSchema>) => {
+    const level = getLogLevel(logEvent);
+    logger[level](logEvent.data, logEvent.type);
   };
 }
