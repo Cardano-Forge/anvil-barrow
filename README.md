@@ -147,6 +147,32 @@ await controller.resume(); // Resumes from paused point
 
 Calling `start()` on a paused job resets the state and starts from scratch.
 
+#### Job Completion
+
+A sync job can complete in two ways:
+
+1. **Using `takeUntil`**: The `takeUntil` function returns `true`
+   ```typescript
+   await controller.start({
+     fn: (event) => { /* process event */ },
+     point: startPoint,
+     takeUntil: (state) => state.tip.slot >= targetSlot,
+   });
+   ```
+
+2. **Using handler return value**: The `fn` handler returns `{ done: true }`
+   ```typescript
+   await controller.start({
+     fn: (event) => {
+       // Process event
+       if (someCondition) {
+         return { done: true };
+       }
+     },
+     point: startPoint,
+   });
+   ```
+
 ### Sync Job Configuration
 
 Configuration properties:
