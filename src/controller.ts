@@ -17,7 +17,7 @@ export class Controller<TSchema extends Schema = Schema> {
     this._config = {
       syncClient: config.syncClient,
       errorHandler: config.errorHandler ?? new ErrorHandler(),
-      eventHandler: config.eventHandler ?? noop,
+      logger: config.logger ?? noop,
       tracingConfig: config.tracingConfig ?? {},
     };
 
@@ -73,7 +73,7 @@ export class Controller<TSchema extends Schema = Schema> {
     this._config.tracingConfig.metrics?.resetCount?.record(0);
     this._config.tracingConfig.metrics?.errorCount?.record(0);
 
-    this._emitEvent({
+    this._emitLogEvent({
       type: "controller.started",
       data: {
         point,
@@ -111,7 +111,7 @@ export class Controller<TSchema extends Schema = Schema> {
 
     switch (this._state.status) {
       case "paused": {
-        this._emitEvent({
+        this._emitLogEvent({
           type: "controller.paused",
           data: {
             reason: "user_requested",
@@ -146,7 +146,7 @@ export class Controller<TSchema extends Schema = Schema> {
           controllerStatuses.indexOf(this._state.status),
         );
 
-        this._emitEvent({
+        this._emitLogEvent({
           type: "controller.resumed",
           data: { resumePoint, counters: this._state.counters },
         });
@@ -163,12 +163,12 @@ export class Controller<TSchema extends Schema = Schema> {
     }
   }
 
-  private _emitEvent(event: Omit<ControllerEvent<TSchema>, "timestamp">): void {
+  private _emitLogEvent(logEvent: Omit<LogEvent<TSchema>, "timestamp">): void {
     try {
-      this._config.eventHandler({
-        ...event,
+      this._config.logger({
+        ...logEvent,
         timestamp: Date.now(),
-      } as ControllerEvent<TSchema>);
+      } as LogEvent<TSchema>);
     } catch {
       // Silently ignore event handler errors to prevent disrupting controller flow
     }
@@ -193,7 +193,7 @@ export class Controller<TSchema extends Schema = Schema> {
         }
         lastArrivalTime = arrivalTime;
 
-        this._emitEvent({
+        this._emitLogEvent({
           type: "event.received",
           data: { event: event.type },
         });
@@ -204,14 +204,14 @@ export class Controller<TSchema extends Schema = Schema> {
             this._config.tracingConfig.metrics?.filterCount?.record(
               this._state.counters.filterCount,
             );
-            this._emitEvent({
+            this._emitLogEvent({
               type: "event.filtered",
               data: { event: event.type },
             });
             continue;
           }
 
-          this._emitEvent({
+          this._emitLogEvent({
             type: "event.processing",
             data: { event: event.type },
           });
@@ -226,7 +226,7 @@ export class Controller<TSchema extends Schema = Schema> {
             processingTime,
           );
 
-          this._emitEvent({
+          this._emitLogEvent({
             type: "event.processed",
             data: {
               event: event.type,
@@ -296,7 +296,7 @@ export class Controller<TSchema extends Schema = Schema> {
             const [value, unit] = opts.throttle;
             const delay = toMilliseconds(value, unit);
 
-            this._emitEvent({
+            this._emitLogEvent({
               type: "throttle.delay",
               data: { delay, unit },
             });
@@ -322,7 +322,7 @@ export class Controller<TSchema extends Schema = Schema> {
       );
 
       if (status === "done") {
-        this._emitEvent({
+        this._emitLogEvent({
           type: "controller.completed",
           data: { status: "done", counters: this._state.counters },
         });
@@ -335,7 +335,7 @@ export class Controller<TSchema extends Schema = Schema> {
       );
       this._state.meta.lastError = parsedError;
 
-      this._emitEvent({
+      this._emitLogEvent({
         type: "error.caught",
         data: { error: parsedError, context: "sync_loop" },
       });
@@ -343,14 +343,14 @@ export class Controller<TSchema extends Schema = Schema> {
       if (this._state.status === "running") {
         const handlerResult = await this._config.errorHandler.handle(error);
 
-        this._emitEvent({
+        this._emitLogEvent({
           type: "error.handled",
           data: { error: parsedError, handlerResult },
         });
 
         if (handlerResult?.retry) {
           if (handlerResult.retry.delay) {
-            this._emitEvent({
+            this._emitLogEvent({
               type: "retry.scheduled",
               data: {
                 delay: handlerResult.retry.delay,
@@ -366,7 +366,7 @@ export class Controller<TSchema extends Schema = Schema> {
           const resumePoint =
             this._state.meta.syncTip ?? this._state.meta.startingPoint;
 
-          this._emitEvent({
+          this._emitLogEvent({
             type: "retry.started",
             data: {
               attempt: this._state.counters.errorCount,
@@ -393,7 +393,7 @@ export class Controller<TSchema extends Schema = Schema> {
         controllerStatuses.indexOf(this._state.status),
       );
 
-      this._emitEvent({
+      this._emitLogEvent({
         type: "controller.completed",
         data: {
           status: "crashed",
@@ -405,7 +405,7 @@ export class Controller<TSchema extends Schema = Schema> {
   }
 }
 
-export type ControllerEvent<TSchema extends Schema = Schema> =
+export type LogEvent<TSchema extends Schema = Schema> =
   | {
       type: "controller.started";
       timestamp: number;
@@ -502,7 +502,7 @@ export type ControllerEvent<TSchema extends Schema = Schema> =
 export type ControllerConfig<TSchema extends Schema = Schema> = {
   syncClient: SyncClient<TSchema>;
   errorHandler?: ErrorHandler;
-  eventHandler?: (event: ControllerEvent<TSchema>) => void;
+  logger?: (logEvent: LogEvent<TSchema>) => void;
   tracingConfig?: TracingConfig;
 };
 

@@ -346,9 +346,9 @@ describe("Controller", () => {
     });
   });
 
-  describe("event handler", () => {
-    it("should call event handler on controller events", async () => {
-      const mockEventHandler = vi.fn();
+  describe("logger", () => {
+    it("should call logger on controller events", async () => {
+      const mockLogger = vi.fn();
       mockGenerator = (async function* () {
         yield {
           type: "apply",
@@ -360,22 +360,22 @@ describe("Controller", () => {
 
       const controller = new Controller({
         syncClient: mockSyncClient,
-        eventHandler: mockEventHandler,
+        logger: mockLogger,
       });
 
       await controller.start({ fn: async () => {} });
       await controller.waitForCompletion();
 
-      expect(mockEventHandler).toHaveBeenCalled();
-      const startedEvent = mockEventHandler.mock.calls.find(
+      expect(mockLogger).toHaveBeenCalled();
+      const startedEvent = mockLogger.mock.calls.find(
         (call) => call[0].type === "controller.started",
       );
       expect(startedEvent).toBeDefined();
     });
 
-    it("should not crash if event handler throws", async () => {
-      const mockEventHandler = vi.fn().mockImplementation(() => {
-        throw new Error("Event handler error");
+    it("should not crash if logger throws", async () => {
+      const mockLogger = vi.fn().mockImplementation(() => {
+        throw new Error("Logger error");
       });
       mockGenerator = (async function* () {
         yield {
@@ -388,7 +388,7 @@ describe("Controller", () => {
 
       const controller = new Controller({
         syncClient: mockSyncClient,
-        eventHandler: mockEventHandler,
+        logger: mockLogger,
       });
 
       await controller.start({ fn: async () => {} });

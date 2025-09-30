@@ -1,12 +1,12 @@
-import type { ControllerEvent } from "./controller";
+import type { LogEvent } from "./controller";
 import type { Schema } from "./types";
 
 export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "trace";
 
 export function getLogLevel<TSchema extends Schema>(
-  event: ControllerEvent<TSchema>,
+  logEvent: LogEvent<TSchema>,
 ): LogLevel {
-  switch (event.type) {
+  switch (logEvent.type) {
     case "event.received":
     case "event.processing": {
       return "trace";
@@ -30,7 +30,7 @@ export function getLogLevel<TSchema extends Schema>(
       return "error";
     }
     case "controller.completed": {
-      return event.data.status === "crashed" ? "error" : "info";
+      return logEvent.data.status === "crashed" ? "error" : "info";
     }
     default: {
       return "info";
