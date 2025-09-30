@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ErrorHandler } from "./error-handler";
+import { assert, beforeEach, describe, expect, it, vi } from "vitest";
+import { ErrorHandler, type HandlerResult } from "./error-handler";
 
 describe("ErrorHandler", () => {
   describe("constructor", () => {
@@ -230,7 +230,7 @@ describe("ErrorHandler", () => {
       expect(result).toBeUndefined();
     });
 
-    it("should use constant delay when exponential is false", async () => {
+    it("should use constant delay when backoff is false", async () => {
       const retryHandler = ErrorHandler.retry({
         maxRetries: 3,
         baseDelay: 100,
@@ -247,11 +247,11 @@ describe("ErrorHandler", () => {
       expect(result).toEqual({ retry: { delay: 100 } });
     });
 
-    it("should use exponential delay when exponential is true", async () => {
+    it("should use backoff delay when backoff is true", async () => {
       const retryHandler = ErrorHandler.retry({
         maxRetries: 4,
         baseDelay: 100,
-        exponential: true,
+        backoff: true,
       });
       const handler = new ErrorHandler(retryHandler);
 
@@ -282,6 +282,102 @@ describe("ErrorHandler", () => {
 
       const result = await handler.handle(new Error("test"));
       expect(result).toEqual({ retry: { delay: undefined } });
+    });
+  });
+
+  describe("ErrorHandler.retryWithBackoff", () => {
+    it("should create retry handler with backoff enabled", async () => {
+      const retryHandler = ErrorHandler.retryWithBackoff({
+        maxRetries: 3,
+        baseDelay: 100,
+      });
+      const handler = new ErrorHandler(retryHandler);
+
+      let result = await handler.handle(new Error("test"));
+      expect(result).toEqual({ retry: { delay: 100 } });
+
+      result = await handler.handle(new Error("test"));
+      expect(result).toEqual({ retry: { delay: 200 } });
+
+      result = await handler.handle(new Error("test"));
+      expect(result).toEqual({ retry: { delay: 400 } });
+    });
+
+    it("should respect maxRetries limit", async () => {
+      const retryHandler = ErrorHandler.retryWithBackoff({
+        maxRetries: 2,
+        baseDelay: 50,
+      });
+      const handler = new ErrorHandler(retryHandler);
+
+      let result = await handler.handle(new Error("test"));
+      expect(result).toEqual({ retry: { delay: 50 } });
+
+      result = await handler.handle(new Error("test"));
+      expect(result).toEqual({ retry: { delay: 100 } });
+
+      result = await handler.handle(new Error("test"));
+      expect(result).toBeUndefined();
+    });
+
+    it("should support persistent option", async () => {
+      const retryHandler = ErrorHandler.retryWithBackoff({
+        maxRetries: 2,
+        baseDelay: 100,
+        persistent: true,
+      });
+      const handler = new ErrorHandler(retryHandler);
+
+      await handler.handle(new Error("test"));
+      await handler.handle(new Error("test"));
+      let result = await handler.handle(new Error("test"));
+      expect(result).toBeUndefined();
+
+      handler.reset();
+
+      result = await handler.handle(new Error("test"));
+      expect(result).toBeUndefined();
+    });
+
+    it("should reset non-persistent handlers", async () => {
+      const retryHandler = ErrorHandler.retryWithBackoff({
+        maxRetries: 2,
+        baseDelay: 100,
+      });
+      const handler = new ErrorHandler(retryHandler);
+
+      await handler.handle(new Error("test"));
+      await handler.handle(new Error("test"));
+      let result = await handler.handle(new Error("test"));
+      expect(result).toBeUndefined();
+
+      handler.reset();
+
+      result = await handler.handle(new Error("test"));
+      expect(result).toEqual({ retry: { delay: 100 } });
+    });
+
+    it("should use exponential backoff", async () => {
+      const retryHandler = ErrorHandler.retryWithBackoff({
+        maxRetries: 5,
+        baseDelay: 10,
+      });
+      const handler = new ErrorHandler(retryHandler);
+
+      const results: HandlerResult[] = [];
+      for (let i = 0; i < 5; i++) {
+        const result = await handler.handle(new Error("test"));
+        assert(result);
+        results.push(result);
+      }
+
+      expect(results).toEqual([
+        { retry: { delay: 10 } },
+        { retry: { delay: 20 } },
+        { retry: { delay: 40 } },
+        { retry: { delay: 80 } },
+        { retry: { delay: 160 } },
+      ]);
     });
   });
 
