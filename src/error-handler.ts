@@ -3,29 +3,29 @@ import type { MaybePromise } from "./types";
 export class ErrorHandler {
   private handlers: RegisteredHandler[] = [];
 
-  constructor(...handlers: (ErrorHandlerFn | BuiltinHandlerType)[]) {
+  constructor(...handlers: (ErrorHandlerFn | RetryPolicyType)[]) {
     for (const handler of handlers) {
       this.register(handler);
     }
   }
 
-  register(handler: ErrorHandlerFn | BuiltinHandlerType): ErrorHandler;
+  register(handler: ErrorHandlerFn | RetryPolicyType): ErrorHandler;
   register(
     filter: ErrorFilter,
-    handler: ErrorHandlerFn | BuiltinHandlerType,
+    handler: ErrorHandlerFn | RetryPolicyType,
   ): ErrorHandler;
   register(
-    filterOrHandler: ErrorFilter | ErrorHandlerFn | BuiltinHandlerType,
-    handler?: ErrorHandlerFn | BuiltinHandlerType,
+    filterOrHandler: ErrorFilter | ErrorHandlerFn | RetryPolicyType,
+    handler?: ErrorHandlerFn | RetryPolicyType,
   ): ErrorHandler {
     let filter: ErrorFilter | undefined;
-    let actualHandler: ErrorHandlerFn | BuiltinHandlerType;
+    let actualHandler: ErrorHandlerFn | RetryPolicyType;
 
     if (handler !== undefined) {
       filter = filterOrHandler as ErrorFilter;
       actualHandler = handler;
     } else {
-      actualHandler = filterOrHandler as ErrorHandlerFn | BuiltinHandlerType;
+      actualHandler = filterOrHandler as ErrorHandlerFn | RetryPolicyType;
     }
 
     if (isBuiltinHandler(actualHandler)) {
@@ -66,12 +66,24 @@ export class ErrorHandler {
     }
   }
 
-  static retry(opts: RetryOptions): BuiltinHandlerType {
+  static retry(opts: RetryOptions): RetryPolicyType {
     return {
       type: "retry",
       maxRetries: opts.maxRetries,
       baseDelay: opts.baseDelay ?? 0,
-      exponential: opts.exponential ?? false,
+      backoff: opts.backoff ?? false,
+      persistent: opts.persistent ?? false,
+    };
+  }
+
+  static retryWithBackoff(
+    opts: Omit<RetryOptions, "backoff" | "baseDelay"> & { baseDelay: number },
+  ): RetryPolicyType {
+    return {
+      type: "retry",
+      maxRetries: opts.maxRetries,
+      baseDelay: opts.baseDelay,
+      backoff: true,
       persistent: opts.persistent ?? false,
     };
   }
@@ -90,13 +102,13 @@ function matchesFilter(error: unknown, filter?: ErrorFilter): boolean {
 }
 
 function isBuiltinHandler(
-  handler: ErrorHandlerFn | BuiltinHandlerType,
-): handler is BuiltinHandlerType {
+  handler: ErrorHandlerFn | RetryPolicyType,
+): handler is RetryPolicyType {
   return typeof handler === "object" && handler !== null && "type" in handler;
 }
 
 function resolveBuiltinHandler(
-  config: BuiltinHandlerType,
+  config: RetryPolicyType,
 ): Pick<RegisteredHandler, "handler" | "reset"> {
   switch (config.type) {
     case "retry": {
@@ -111,9 +123,9 @@ function resolveBuiltinHandler(
 function resolveRetryHandler(opts: {
   maxRetries: number;
   baseDelay?: number;
-  exponential?: boolean;
+  backoff?: boolean;
 }): { handler: ErrorHandlerFn; reset: () => void } {
-  const { maxRetries, baseDelay = 0, exponential = false } = opts;
+  const { maxRetries, baseDelay = 0, backoff = false } = opts;
   let attempts = 0;
 
   const handler = (_error: unknown): HandlerResult | undefined => {
@@ -126,7 +138,7 @@ function resolveRetryHandler(opts: {
     let delay: number | undefined;
     if (baseDelay <= 0) {
       delay = undefined;
-    } else if (exponential) {
+    } else if (backoff) {
       delay = baseDelay * 2 ** (attempts - 1);
     } else {
       delay = baseDelay;
@@ -161,17 +173,17 @@ export type ErrorHandlerFn = (
 export type RetryOptions = {
   maxRetries: number;
   baseDelay?: number;
-  exponential?: boolean;
+  backoff?: boolean;
   persistent?: boolean;
 };
 
-export type BuiltinHandlerType = {
+export type RetryPolicyType = {
   type: "retry";
 } & RetryOptions;
 
 export type ErrorHandlerConfig = {
   filter?: ErrorFilter;
-  handler: ErrorHandlerFn | BuiltinHandlerType;
+  handler: ErrorHandlerFn | RetryPolicyType;
 };
 
 type RegisteredHandler = {

@@ -21,11 +21,11 @@ const controller = new Controller({
     )
     .register(
       SocketError,
-      ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, exponential: true }),
+      ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, backoff: true }),
     )
     .register(
       SocketClosedError,
-      ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, exponential: true }),
+      ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, backoff: true }),
     ),
   eventHandler: pinoEventLogger(pino({ level: "trace" })),
   tracingConfig: otelTracing(),
