@@ -1,6 +1,6 @@
-# Anvil Barrow
+# Barrow
 
-Barrow is a framework for building chain indexing tools. It provides a simple API for defining and running indexing jobs.
+Barrow is a framework for building blockchain indexing tools. It provides a simple API for defining and running indexing jobs on the Cardano blockchain.
 
 ## Installation
 
@@ -18,9 +18,9 @@ Then, install Barrow using npm:
 npm i @cardano-forge/barrow
 ```
 
-# Usage
+## Usage
 
-## Controller
+### Controller
 
 The `Controller` class is the main entry point for defining and running indexing jobs.
 
@@ -31,70 +31,60 @@ It takes a configuration object as its only argument, which includes the followi
 - `logger` (optional): A function that handles log events.
 - `tracingConfig` (optional): An object that configures tracing for the controller.
 
-### SyncClient
+#### SyncClient
 
 The `SyncClient` interface defines a method for generating sync events.
 
-Currently, the only implementation of `SyncClient` is `OgmiosSyncClient`, which uses the [Ogmios API](https://ogmios.dev/mini-protocols/local-chain-sync/) to sync events.
+Currently, the only implementation of `SyncClient` is `OgmiosSyncClient`, which uses the [Ogmios API](https://ogmios.dev/mini-protocols/local-chain-sync/) to sync with the blockchain.
 
-In the future, we plan to add support for other sync clients such as [Dolos](https://docs.txpipe.io/).
+Future support is planned for other sync clients such as [Dolos](https://docs.txpipe.io/).
 
-### ErrorHandler
+#### ErrorHandler
 
 The `ErrorHandler` class is responsible for handling errors during sync events.
 
-It takes a list of error handlers as its constructor argument, which can be either a single handler or an array of handlers.
+**Methods:**
 
-Each error handler is a function that takes an error as its argument and returns an object that represents the result of handling the error.
-
-The `ErrorHandler` class provides the following methods for registering and handling errors:
-
-- `register(filter, handler)`: Registers an error handler (or retry policy) for a specific error type or class.
-- `handle(error)`: Handles an error and returns a result.
+- `register(filter, handler)`: Registers an error handler or retry policy for a specific error type or class.
+- `handle(error)`: Processes an error and returns the handling result.
 - `reset()`: Resets the error handler to its initial state.
 
-#### Retry policies
+##### Retry policies
 
-An error handler is a function that takes an error as its argument and returns an object that represents the result of handling the error.
-
-The `ErrorHandler` class provides the following built-in error handlers:
+Built-in retry handlers:
 
 - `ErrorHandler.retry(options)`: Retries the sync event after a specified delay.
 - `ErrorHandler.retryWithBackoff(options)`: Retries the sync event with exponential backoff.
 
-#### Error filters
+##### Error filters
 
-A filter can either be:
+A filter can be:
 
-- An Error class. Only errors that are instances of the class will be handled.
-- A function that takes an error as its argument and returns a boolean indicating whether to handle the error.
+- An Error class (only instances of that class will be handled)
+- A function that takes an error and returns a boolean indicating whether to handle it
 
-#### Error handler options
+##### Retry options
 
-The `ErrorHandler.retry` and `ErrorHandler.retryWithBackoff` methods take an options object as their only argument.
+Options for `ErrorHandler.retry` and `ErrorHandler.retryWithBackoff`:
 
-- `maxRetries` (optional): The maximum number of retries. Defaults to 3.
-- `baseDelay` (optional): The base delay in milliseconds between retries. Defaults to 1000.
-- `backoff` (optional): Whether to use exponential backoff. Defaults to false.
-- `persistent` (optional): Whether to reset the error handler after each retry. Defaults to false.
+- `maxRetries` (optional): Maximum number of retries (default: 3)
+- `baseDelay` (optional): Base delay in milliseconds between retries (default: 1000)
+- `backoff` (optional): Use exponential backoff (default: false)
+- `persistent` (optional): Preserve error handler state between retries (default: false)
 
-## Controller usage
+### Getting Started
 
-First, you need to create an instance of `SyncClient`.
+#### Step 1: Install Dependencies
 
-Currently, the only implementation of `SyncClient` is `OgmiosSyncClient`.
-
-Make sure you have the required dependencies installed:
+Install the Ogmios client:
 
 ```bash
 npm i @cardano-ogmios/client
 ```
 
-Then, create an instance of `OgmiosSyncClient` with the following properties:
+#### Step 2: Create a Sync Client
 
-- `host`: The host of the Ogmios node.
-- `port`: The port of the Ogmios node.
-- `tls`: Whether to use TLS.
+Create an instance of `OgmiosSyncClient`:
 
 ```typescript
 import { OgmiosSyncClient } from "@cardano-forge/barrow/ogmios";
@@ -106,19 +96,27 @@ const syncClient = new OgmiosSyncClient({
 });
 ```
 
-Next, you need to create an instance of `Controller`.
+Configuration options:
+- `host`: Ogmios node hostname
+- `port`: Ogmios node port
+- `tls`: Enable TLS connection
+
+#### Step 3: Create a Controller
+
+Create a `Controller` instance with your sync client:
 
 ```typescript
-import { Controller } from "@cardano-forge/barrow";
+import { Controller, ErrorHandler } from "@cardano-forge/barrow";
 
 const controller = new Controller({
   syncClient,
   errorHandler: new ErrorHandler(),
-  eventHandler: (event) => console.log(event),
 });
 ```
 
-Once you have a controller, you can start it by calling the `start` method and passing it a sync job configuration object.
+#### Step 4: Start Syncing
+
+Start the controller with a sync job configuration:
 
 ```typescript
 await controller.start({
@@ -131,128 +129,98 @@ await controller.start({
   },
   throttle: [100, "milliseconds"],
 });
-```
 
-The `start` method returns a promise that resolves when the sync job is started.
-
-You can also wait for the sync job to complete by calling the `waitForCompletion` method.
-
-```typescript
+// Wait for sync completion
 await controller.waitForCompletion();
 ```
 
-The `waitForCompletion` method returns a promise that resolves when the sync job is completed.
+#### Controlling Sync Jobs
 
-You can pause and resume the sync job by calling the `pause` and `resume` methods.
+**Pause and Resume:**
 
 ```typescript
-await controller.pause();
-await controller.resume();
+await controller.pause();  // Preserves state
+await controller.resume(); // Resumes from paused point
 ```
 
-When pausing a sync job, the controller state is preserved and the sync job can be resumed at the same point it was paused.
+**Restart:**
 
-You can also run `start` on a paused sync job to reset the state and start from scratch.
+Calling `start()` on a paused job resets the state and starts from scratch.
 
-## Sync job configuration
+### Sync Job Configuration
 
-A sync job configuration object is used to define a sync job. It includes the following properties:
+Configuration properties:
 
-- `fn`: A function that handles sync events.
-- `point`: The point to start syncing from.
-- `throttle` (optional): The throttle duration for sync events.
-- `filter` (optional): A function that filters sync events.
-- `takeUntil` (optional): A function that takes the current state and returns a boolean indicating whether to stop syncing.
+- `fn`: Function that handles sync events
+- `point`: Starting point for syncing (slot and block ID)
+- `throttle` (optional): Throttle duration for sync events
+- `filter` (optional): Function to filter sync events
+- `takeUntil` (optional): Function that returns true to stop syncing
 
-### Sync event
+#### Data Structures
 
-A sync event is an object that represents a sync event. It includes the following properties:
+**Sync Event:**
+- `type`: Event type
+- `block`: Block that was synced
+- `tip`: Current chain tip
 
-- `type`: The type of the sync event.
-- `block`: The block that was synced.
-- `tip`: The tip of the chain.
+**Point:**
+- `slot`: Slot number
+- `id`: Block hash
 
-### Point
+**Tip:**
+- `slot`: Slot number
+- `id`: Block hash
+- `height`: Block height
 
-A point is an object that represents a point in the chain. It includes the following properties:
-
-- `slot`: The slot number of the point.
-- `id`: The hash of the point.
-
-### Tip
-
-A tip is an object that represents the tip of the chain. It includes the following properties:
-
-- `slot`: The slot number of the tip.
-- `id`: The hash of the tip.
-- `height`: The height of the tip.
-
-### Block
-
-A block is an object that represents a block in the chain. It includes at least the following properties:
-
-- `type`: The type of the block.
-- `era`: The era of the block.
-- `id`: The hash of the block.
-- `height`: The height of the block.
-- `slot` (optional): The slot number of the block.
-
-### Schema
-
-A schema is an object that represents the structure of sync events. It includes the following properties:
-
-- `block`: The block that was synced.
-- `point`: The point that was synced.
-- `tip`: The tip of the chain.
-- `pointOrOrigin`: The point or origin that was synced.
-- `tipOrOrigin`: The tip or origin of the chain.
+**Block:**
+- `type`: Block type
+- `era`: Cardano era
+- `id`: Block hash
+- `height`: Block height
+- `slot` (optional): Slot number
 
 ## Logger
 
-Barrow provides a built-in logger that uses [Pino](https://getpino.io) for logging.
+Barrow provides built-in logging support using [Pino](https://getpino.io).
 
-### Usage
+### Setup
 
-First, make sur you have the required dependencies installed:
+Install Pino:
 
 ```bash
 npm i pino
 ```
 
-Then, create a pino logger instance:
+Configure the logger:
 
 ```typescript
 import { pinoLogger } from "@cardano-forge/barrow/pino";
 import { pino } from "pino";
 
-const logger = pino();
-```
-
-You can now use the logger in your controller:
-
-```typescript
 const controller = new Controller({
   syncClient: new OgmiosSyncClient({
     host: "localhost",
     port: 1337,
     tls: false,
   }),
-  logger: pinoLogger(logger),
+  logger: pinoLogger(pino()),
 });
+```
 
 ## Tracing
 
-Barrow provides a built-in tracing system that uses [OpenTelemetry](https://opentelemetry.io) for metrics and tracing.
+Barrow supports [OpenTelemetry](https://opentelemetry.io) for metrics and tracing.
 
-### Usage
+### Setup
 
-First, make sure you have the required dependencies installed:
+Install OpenTelemetry:
 
 ```bash
 npm i @opentelemetry/api
 ```
 
-You can now use the OpenTelemetry API in your controller:
+Configure tracing:
 
 ```typescript
 import { otelTracingConfig } from "@cardano-forge/barrow/otel";
@@ -267,49 +235,44 @@ const controller = new Controller({
 });
 ```
 
-The `otelTracingConfig` function takes an optional input that can be either a `Meter` instance or an object with the following properties:
+The `otelTracingConfig` function accepts either:
+- A `Meter` instance
+- A configuration object with `name`, `version` (optional), and `opts` (optional)
 
-- `name`: The name of the meter.
-- `version` (optional): The version of the meter.
-- `opts` (optional): The options for the meter.
+### Available Metrics
 
-### Metrics
+- `status`: Controller status
+- `sync_tip_slot`: Current sync slot number
+- `sync_tip_height`: Current sync block height
+- `chain_tip_slot`: Chain tip slot number
+- `chain_tip_height`: Chain tip block height
+- `is_synced`: Sync status (boolean)
+- `processing_time`: Event processing duration
+- `arrival_time`: Event arrival time
+- `apply_count`: Number of apply events
+- `reset_count`: Number of reset events
+- `filter_count`: Number of filtered events
+- `error_count`: Number of errors
 
-Barrow provides the following built-in metrics:
+## Examples
 
-- `status`: The status of the controller.
-- `sync_tip_slot`: The slot number of the sync tip.
-- `sync_tip_height`: The height of the sync tip.
-- `chain_tip_slot`: The slot number of the chain tip.
-- `chain_tip_height`: The height of the chain tip.
-- `is_synced`: Whether the controller is synced.
-- `processing_time`: The time it takes to process an event.
-- `arrival_time`: The time it takes to receive an event.
-- `apply_count`: The number of apply events.
-- `reset_count`: The number of reset events.
-- `filter_count`: The number of filtered events.
-- `error_count`: The number of errors.
+Example implementations are available in the `src/examples` directory.
 
-## Example
+### Running Examples
 
-You can find examples of using Barrow in the `src/examples` directory.
+1. Install dependencies:
+   ```bash
+   npm i
+   ```
 
-To run an example, first install the dependencies:
+2. Create a `.env` file in the project root:
+   ```dotenv
+   OGMIOS_NODE_HOST=<ogmios-node-host>
+   OGMIOS_NODE_PORT=<ogmios-node-port>
+   OGMIOS_NODE_TLS=<ogmios-node-tls>
+   ```
 
-```bash
-npm i
-```
-
-Then, create a `.env` file in the root directory and add the following lines:
-
-```dotenv
-OGMIOS_NODE_HOST=<ogmios-node-host>
-OGMIOS_NODE_PORT=<ogmios-node-port>
-OGMIOS_NODE_TLS=<ogmios-node-tls>
-```
-
-Then, run the example:
-
-```bash
-npm run example kitchen-sink
-```
+3. Run an example:
+   ```bash
+   npm run example kitchen-sink
+   ```
