@@ -1,3 +1,5 @@
+import type { MaybePromise } from "./types";
+
 export class ErrorHandler {
   private handlers: RegisteredHandler[] = [];
 
@@ -47,7 +49,7 @@ export class ErrorHandler {
   async handle(error: unknown): Promise<HandlerResult | undefined> {
     for (const { filter, handler } of this.handlers) {
       if (matchesFilter(error, filter)) {
-        const result = await Promise.resolve(handler(error));
+        const result = await handler(error);
         if (result !== undefined) {
           return result;
         }
@@ -154,7 +156,7 @@ export type HandlerResult = {
 export type ErrorHandlerFn = (
   error: unknown,
   // biome-ignore lint/suspicious/noConfusingVoidType: Allow void for better DX
-) => HandlerResult | undefined | void;
+) => MaybePromise<HandlerResult | undefined | void>;
 
 export type RetryOptions = {
   maxRetries: number;
