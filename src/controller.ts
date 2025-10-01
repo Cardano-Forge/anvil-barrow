@@ -78,6 +78,7 @@ export class Controller<TSchema extends Schema = Schema> {
       data: {
         point,
         startOpts,
+        meta: this._state.meta,
       },
     });
 
@@ -116,6 +117,7 @@ export class Controller<TSchema extends Schema = Schema> {
           data: {
             reason: "user_requested",
             counters: this._state.counters,
+            meta: this._state.meta,
           },
         });
         return this._state;
@@ -148,7 +150,11 @@ export class Controller<TSchema extends Schema = Schema> {
 
         this._emitLogEvent({
           type: "controller.resumed",
-          data: { resumePoint, counters: this._state.counters },
+          data: {
+            resumePoint,
+            counters: this._state.counters,
+            meta: this._state.meta,
+          },
         });
 
         this._state.promise = this._runSyncLoop(this._state.meta.startOpts);
@@ -324,7 +330,11 @@ export class Controller<TSchema extends Schema = Schema> {
       if (status === "done") {
         this._emitLogEvent({
           type: "controller.completed",
-          data: { status: "done", counters: this._state.counters },
+          data: {
+            status: "done",
+            counters: this._state.counters,
+            meta: this._state.meta,
+          },
         });
       }
     } catch (error) {
@@ -398,7 +408,7 @@ export class Controller<TSchema extends Schema = Schema> {
         data: {
           status: "crashed",
           counters: this._state.counters,
-          lastError: this._state.meta.lastError,
+          meta: this._state.meta,
         },
       });
     }
@@ -412,6 +422,7 @@ export type LogEvent<TSchema extends Schema = Schema> =
       data: {
         point?: TSchema["pointOrOrigin"];
         startOpts: Omit<ControllerStartOpts<TSchema>, "point">;
+        meta: ControllerStateMeta<TSchema>;
       };
     }
   | {
@@ -420,6 +431,7 @@ export type LogEvent<TSchema extends Schema = Schema> =
       data: {
         reason: "user_requested" | "error_limit";
         counters: ControllerStateCounters;
+        meta: ControllerStateMeta<TSchema>;
       };
     }
   | {
@@ -428,6 +440,7 @@ export type LogEvent<TSchema extends Schema = Schema> =
       data: {
         resumePoint?: TSchema["pointOrOrigin"];
         counters: ControllerStateCounters;
+        meta: ControllerStateMeta<TSchema>;
       };
     }
   | {
@@ -436,7 +449,7 @@ export type LogEvent<TSchema extends Schema = Schema> =
       data: {
         status: "done" | "crashed";
         counters: ControllerStateCounters;
-        lastError?: Error;
+        meta: ControllerStateMeta<TSchema>;
       };
     }
   | {
