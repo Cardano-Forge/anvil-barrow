@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import * as dotenv from "dotenv";
+
+dotenv.config();
 
 const basePath = "src/examples";
 
@@ -13,7 +16,7 @@ if (!script) {
 
 const scriptPath = join(basePath, `${script}.ts`);
 
-const child = spawn("dotenv", ["-c", "--", "tsx", scriptPath], {
+const child = spawn("tsx", [scriptPath], {
   stdio: "inherit",
   shell: true,
 });
