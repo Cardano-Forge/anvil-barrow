@@ -1,8 +1,5 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import * as dotenv from "dotenv";
-
-dotenv.config();
 
 const basePath = "src/examples";
 

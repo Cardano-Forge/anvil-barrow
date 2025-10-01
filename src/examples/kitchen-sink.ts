@@ -1,3 +1,6 @@
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+import { NodeSDK } from "@opentelemetry/sdk-node";
 import { pino } from "pino";
 import { assert, unwrap } from "trynot";
 import { Controller } from "../controller";
@@ -7,6 +10,29 @@ import { pinoLogger } from "../dep/pino";
 import { ErrorHandler } from "../error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "../errors";
 import { noop } from "../lib/noop";
+
+new NodeSDK({
+  metricReader: new PeriodicExportingMetricReader({
+    exporter: new OTLPMetricExporter(),
+  }),
+}).start();
+
+const logger = pino({
+  level: "trace",
+  transport: {
+    targets: [
+      {
+        target: "pino-pretty",
+        options: { colorize: true },
+        level: "trace",
+      },
+      {
+        target: "pino-opentelemetry-transport",
+        level: "trace",
+      },
+    ],
+  },
+});
 
 const controller = new Controller({
   syncClient: new OgmiosSyncClient({
@@ -27,7 +53,7 @@ const controller = new Controller({
       SocketClosedError,
       ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, backoff: true }),
     ),
-  logger: pinoLogger(pino({ level: "trace" })),
+  logger: pinoLogger(logger),
   tracingConfig: otelTracingConfig(),
 });
 
@@ -42,8 +68,10 @@ async function main() {
       fn: noop,
       point,
       throttle: [100, "milliseconds"],
+      // Uncomment to run a specific block
       // filter: (event) => event.type === "apply" && event.block.height === 3859660,
-      takeUntil: ({ state }) => state.counters.applyCount >= 10,
+      // Uncomment to stop after n block(s) are applied
+      // takeUntil: ({ state }) => state.counters.applyCount >= 10,
     }),
   );
   await controller.waitForCompletion();

@@ -171,9 +171,13 @@ export type ErrorHandlerFn = (
 ) => MaybePromise<HandlerResult | undefined | void>;
 
 export type RetryOptions = {
+  /** Maximum number of retries (default: 3) */
   maxRetries: number;
+  /** Base delay in milliseconds between retries (default: 1000) */
   baseDelay?: number;
+  /** Use exponential backoff (default: false) */
   backoff?: boolean;
+  /** Preserve error handler state between retries (default: false) */
   persistent?: boolean;
 };
 

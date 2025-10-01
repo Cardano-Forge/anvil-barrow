@@ -520,13 +520,18 @@ export type ControllerConfig<TSchema extends Schema = Schema> = {
 };
 
 export type ControllerStartOpts<TSchema extends Schema = Schema> = {
+  /** Function that handles sync events */
   fn: (
     event: SyncEvent<TSchema>,
     // biome-ignore lint/suspicious/noConfusingVoidType: Allow void for better DX
   ) => MaybePromise<{ done: boolean } | undefined | void>;
+  /** Starting point for syncing (slot and block ID) */
   point?: Schema["pointOrOrigin"];
+  /** Throttle duration for sync events */
   throttle?: [number, Unit];
+  /** Function to filter sync events */
   filter?: (event: SyncEvent<TSchema>) => MaybePromise<boolean>;
+  /** Function that returns true to stop syncing */
   takeUntil?: (data: {
     lastEvent: SyncEvent<TSchema>;
     state: ControllerStateRunning<TSchema>;
