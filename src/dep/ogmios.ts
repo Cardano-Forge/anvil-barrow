@@ -15,9 +15,9 @@ import type {
 
 export type OgmiosSchema = Schema<
   OgmiosSchemaNs.Block,
-  OgmiosSchemaNs.Point,
-  OgmiosSchemaNs.Tip,
-  OgmiosSchemaNs.Origin
+  OgmiosSchemaNs.PointOrOrigin,
+  OgmiosSchemaNs.PointOrOrigin | "tip",
+  OgmiosSchemaNs.TipOrOrigin
 >;
 
 type Event =
@@ -28,7 +28,7 @@ export class OgmiosSyncClient implements SyncClient<OgmiosSchema> {
   constructor(protected _config: ConnectionConfig) {}
 
   async *sync(
-    opts: SyncClientSyncOpts<OgmiosSchema> = {},
+    opts: SyncClientSyncOpts<OgmiosSchema>,
   ): AsyncGenerator<SyncEvent<OgmiosSchema>, void> {
     const events: Array<Event> = [];
     let waitingResolve: (() => void) | null = null;
@@ -71,7 +71,7 @@ export class OgmiosSyncClient implements SyncClient<OgmiosSchema> {
     }
 
     try {
-      const points = opts.point ? [opts.point] : undefined;
+      const points = opts.point === "tip" ? undefined : [opts.point];
       await client.resume(points);
       while (true) {
         let item = events.shift();

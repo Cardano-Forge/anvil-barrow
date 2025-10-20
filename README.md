@@ -24,12 +24,21 @@ npm i @cardano-forge/barrow
 
 The `Controller` class is the main entry point for defining and running indexing jobs.
 
-It takes a configuration object as its only argument, which includes the following properties:
+**Constructor:**
 
-- `syncClient`: An instance of `SyncClient` that provides a generator for sync events.
-- `errorHandler` (optional): An instance of `ErrorHandler` that handles errors during sync events.
-- `logger` (optional): A function that handles log events.
-- `tracingConfig` (optional): An object that configures tracing for the controller.
+```typescript
+new Controller(config, startOpts?)
+```
+
+**Parameters:**
+
+1. `config` (required): Configuration object with the following properties:
+   - `syncClient`: An instance of `SyncClient` that provides a generator for sync events.
+   - `errorHandler` (optional): An instance of `ErrorHandler` that handles errors during sync events.
+   - `logger` (optional): A function that handles log events.
+   - `tracingConfig` (optional): An object that configures tracing for the controller.
+
+2. `startOpts` (optional): Default options to use for all `start()` calls. These will be merged with options passed to `start()`, with `start()` options taking precedence. See [Sync Job Configuration](#sync-job-configuration) for available options (excluding `point`).
 
 #### SyncClient
 
@@ -114,6 +123,24 @@ const controller = new Controller({
 });
 ```
 
+You can optionally provide default start options as a second parameter. These defaults will be merged with options passed to `start()`:
+
+```typescript
+const controller = new Controller(
+  {
+    syncClient,
+    errorHandler: new ErrorHandler(),
+  },
+  {
+    // Default options for all start() calls
+    throttle: [100, "milliseconds"],
+    fn: (event) => {
+      console.log(event);
+    },
+  }
+);
+```
+
 #### Step 4: Start Syncing
 
 Start the controller with a sync job configuration:
@@ -177,8 +204,8 @@ A sync job can complete in two ways:
 
 Configuration properties:
 
-- `fn`: Function that handles sync events
-- `point`: Starting point for syncing (slot and block ID)
+- `point` (required): Starting point for syncing (slot and block ID)
+- `fn` (optional): Function that handles sync events
 - `throttle` (optional): Throttle duration for sync events
 - `filter` (optional): Function to filter sync events
 - `takeUntil` (optional): Function that returns true to stop syncing

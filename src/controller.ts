@@ -12,14 +12,19 @@ export class Controller<TSchema extends Schema = Schema> {
   };
 
   protected _config: Required<ControllerConfig<TSchema>>;
+  protected _startOpts: Omit<ControllerStartOpts<TSchema>, "point">;
 
-  constructor(config: ControllerConfig<TSchema>) {
+  constructor(
+    config: ControllerConfig<TSchema>,
+    startOpts: Omit<ControllerStartOpts<TSchema>, "point"> = {},
+  ) {
     this._config = {
       syncClient: config.syncClient,
       errorHandler: config.errorHandler ?? new ErrorHandler(),
       logger: config.logger ?? noop,
       tracingConfig: config.tracingConfig ?? {},
     };
+    this._startOpts = startOpts;
 
     this._config.tracingConfig.metrics?.status?.record(
       controllerStatuses.indexOf(this._state.status),
@@ -39,7 +44,7 @@ export class Controller<TSchema extends Schema = Schema> {
       }
     }
 
-    const { point, ...startOpts } = opts;
+    const { point, ...startOpts } = { ...this._startOpts, ...opts };
 
     this._state = {
       status: "running",
@@ -224,7 +229,7 @@ export class Controller<TSchema extends Schema = Schema> {
 
           const processingStart = Date.now();
 
-          const res = await opts.fn(event);
+          const res = await opts.fn?.(event);
 
           const processingTime = Date.now() - processingStart;
 
@@ -273,12 +278,6 @@ export class Controller<TSchema extends Schema = Schema> {
             this._config.tracingConfig.metrics?.isSynced?.record(1);
           } else {
             this._config.tracingConfig.metrics?.isSynced?.record(0);
-          }
-
-          const processedCount =
-            this._state.counters.applyCount + this._state.counters.resetCount;
-          if (processedCount === 0 && !this._state.meta.startingPoint) {
-            this._state.meta.startingPoint = this._state.meta.syncTip;
           }
 
           const eventCounter = `${event.type}Count` as const;
@@ -420,7 +419,7 @@ export type LogEvent<TSchema extends Schema = Schema> =
       type: "controller.started";
       timestamp: number;
       data: {
-        point?: TSchema["pointOrOrigin"];
+        point: TSchema["startingPoint"];
         startOpts: Omit<ControllerStartOpts<TSchema>, "point">;
         meta: ControllerStateMeta<TSchema>;
       };
@@ -438,7 +437,7 @@ export type LogEvent<TSchema extends Schema = Schema> =
       type: "controller.resumed";
       timestamp: number;
       data: {
-        resumePoint?: TSchema["pointOrOrigin"];
+        resumePoint: TSchema["startingPoint"] | TSchema["tip"];
         counters: ControllerStateCounters;
         meta: ControllerStateMeta<TSchema>;
       };
@@ -507,7 +506,7 @@ export type LogEvent<TSchema extends Schema = Schema> =
       timestamp: number;
       data: {
         attempt: number;
-        resumePoint?: TSchema["pointOrOrigin"];
+        resumePoint?: TSchema["startingPoint"] | TSchema["tip"];
         originalError: Error;
       };
     };
@@ -520,13 +519,13 @@ export type ControllerConfig<TSchema extends Schema = Schema> = {
 };
 
 export type ControllerStartOpts<TSchema extends Schema = Schema> = {
+  /** Starting point for syncing (slot and block ID) */
+  point: Schema["startingPoint"];
   /** Function that handles sync events */
-  fn: (
+  fn?: (
     event: SyncEvent<TSchema>,
     // biome-ignore lint/suspicious/noConfusingVoidType: Allow void for better DX
   ) => MaybePromise<{ done: boolean } | undefined | void>;
-  /** Starting point for syncing (slot and block ID) */
-  point?: Schema["pointOrOrigin"];
   /** Throttle duration for sync events */
   throttle?: [number, Unit];
   /** Function to filter sync events */
@@ -547,9 +546,9 @@ export type ControllerStateCounters = {
 
 export type ControllerStateMeta<TSchema extends Schema = Schema> = {
   startOpts: Omit<ControllerStartOpts<TSchema>, "point">;
-  startingPoint: TSchema["pointOrOrigin"] | undefined;
-  syncTip: TSchema["point"] | TSchema["tipOrOrigin"] | undefined;
-  chainTip: TSchema["tipOrOrigin"] | undefined;
+  startingPoint: TSchema["startingPoint"];
+  syncTip: TSchema["tip"] | undefined;
+  chainTip: TSchema["tip"] | undefined;
   lastError: Error | undefined;
 };
 
