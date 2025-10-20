@@ -23,12 +23,23 @@ describe("Controller", () => {
       expect(controller).toBeDefined();
       expect(controller.state.status).toBe("idle");
     });
+
+    it("should accept default start options in constructor", () => {
+      const mockFn = vi.fn();
+      const mockFilter = vi.fn();
+      const controller = new Controller(
+        { syncClient: mockSyncClient },
+        { fn: mockFn, filter: mockFilter, throttle: [1, "seconds"] },
+      );
+      expect(controller).toBeDefined();
+      expect(controller.state.status).toBe("idle");
+    });
   });
 
   describe("start", () => {
     it("should start controller from idle state", async () => {
       const controller = new Controller({ syncClient: mockSyncClient });
-      const result = await controller.start({ fn: vi.fn() });
+      const result = await controller.start({ point: "tip", fn: vi.fn() });
       assert(isOk(result));
       expect(result.status).toBe("running");
     });
@@ -40,14 +51,14 @@ describe("Controller", () => {
       mockSyncClient.sync = vi.fn(() => mockGenerator);
 
       const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({ fn: vi.fn() });
-      const result = await controller.start({ fn: vi.fn() });
+      await controller.start({ point: "tip", fn: vi.fn() });
+      const result = await controller.start({ point: "tip", fn: vi.fn() });
       assert(isErr(result));
     });
 
     it("should initialize counters to zero", async () => {
       const controller = new Controller({ syncClient: mockSyncClient });
-      const result = await controller.start({ fn: vi.fn() });
+      const result = await controller.start({ point: "tip", fn: vi.fn() });
       assert(isOk(result));
       expect(result.counters.applyCount).toBe(0);
       expect(result.counters.resetCount).toBe(0);
@@ -63,6 +74,123 @@ describe("Controller", () => {
 
       expect(mockSyncClient.sync).toHaveBeenCalledWith({ point });
     });
+
+    it("should use default fn from constructor if not provided in start", async () => {
+      const mockFn = vi.fn();
+      mockGenerator = (async function* () {
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "1", height: 1, slot: 1 },
+          tip: { slot: 1, id: "1", height: 1 },
+        };
+      })();
+      mockSyncClient.sync = vi.fn(() => mockGenerator);
+
+      const controller = new Controller(
+        { syncClient: mockSyncClient },
+        { fn: mockFn },
+      );
+      await controller.start({ point: "tip" });
+      await controller.waitForCompletion();
+
+      expect(mockFn).toHaveBeenCalledTimes(1);
+    });
+
+    it("should override default fn with fn provided in start", async () => {
+      const defaultFn = vi.fn();
+      const overrideFn = vi.fn();
+      mockGenerator = (async function* () {
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "1", height: 1, slot: 1 },
+          tip: { slot: 1, id: "1", height: 1 },
+        };
+      })();
+      mockSyncClient.sync = vi.fn(() => mockGenerator);
+
+      const controller = new Controller(
+        { syncClient: mockSyncClient },
+        { fn: defaultFn },
+      );
+      await controller.start({ point: "tip", fn: overrideFn });
+      await controller.waitForCompletion();
+
+      expect(defaultFn).not.toHaveBeenCalled();
+      expect(overrideFn).toHaveBeenCalledTimes(1);
+      expect(defaultFn).not.toHaveBeenCalled();
+    });
+
+    it("should use default filter from constructor", async () => {
+      const mockFn = vi.fn();
+      const mockFilter = vi.fn().mockResolvedValue(false);
+
+      mockGenerator = (async function* () {
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "1", height: 1, slot: 1 },
+          tip: { slot: 1, id: "1", height: 1 },
+        };
+      })();
+      mockSyncClient.sync = vi.fn(() => mockGenerator);
+
+      const controller = new Controller(
+        { syncClient: mockSyncClient },
+        { fn: mockFn, filter: mockFilter },
+      );
+      await controller.start({ point: "tip" });
+      await controller.waitForCompletion();
+
+      expect(mockFilter).toHaveBeenCalledTimes(1);
+      expect(mockFn).not.toHaveBeenCalled();
+      assert(controller.state.status !== "idle");
+      expect(controller.state.counters.filterCount).toBe(1);
+    });
+
+    it("should merge default start options with runtime options", async () => {
+      const defaultFn = vi.fn();
+      const defaultFilter = vi.fn().mockResolvedValue(true);
+      const overrideFilter = vi.fn().mockResolvedValue(false);
+
+      mockGenerator = (async function* () {
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "1", height: 1, slot: 1 },
+          tip: { slot: 1, id: "1", height: 1 },
+        };
+      })();
+      mockSyncClient.sync = vi.fn(() => mockGenerator);
+
+      const controller = new Controller(
+        { syncClient: mockSyncClient },
+        { fn: defaultFn, filter: defaultFilter, throttle: [1, "seconds"] },
+      );
+      await controller.start({ point: "tip", filter: overrideFilter });
+      await controller.waitForCompletion();
+
+      // Override filter should be used, default fn should be used
+      expect(overrideFilter).toHaveBeenCalledTimes(1);
+      expect(defaultFilter).not.toHaveBeenCalled();
+      expect(defaultFn).not.toHaveBeenCalled(); // Filtered out
+    });
+
+    it("should work without fn if not provided in constructor or start", async () => {
+      mockGenerator = (async function* () {
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "1", height: 1, slot: 1 },
+          tip: { slot: 1, id: "1", height: 1 },
+        };
+      })();
+      mockSyncClient.sync = vi.fn(() => mockGenerator);
+
+      const controller = new Controller({ syncClient: mockSyncClient });
+      await controller.start({ point: "tip" });
+      await controller.waitForCompletion();
+
+      // Should complete without errors even though no fn was provided
+      assert(controller.state.status !== "idle");
+      expect(controller.state.counters.applyCount).toBe(1);
+    });
   });
 
   describe("pause", () => {
@@ -77,7 +205,7 @@ describe("Controller", () => {
       mockSyncClient.sync = vi.fn(() => mockGenerator);
 
       const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({ fn: async () => {} });
+      await controller.start({ point: "tip", fn: async () => {} });
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -105,7 +233,7 @@ describe("Controller", () => {
       mockSyncClient.sync = vi.fn(() => mockGenerator);
 
       const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({ fn: async () => {} });
+      await controller.start({ point: "tip", fn: async () => {} });
       await new Promise((resolve) => setTimeout(resolve, 10));
       await controller.pause();
 
@@ -139,7 +267,10 @@ describe("Controller", () => {
       mockSyncClient.sync = vi.fn(() => mockGenerator);
 
       const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({ fn: async () => ({ done: true }) });
+      await controller.start({
+        point: "tip",
+        fn: async () => ({ done: true }),
+      });
 
       const result = await controller.waitForCompletion();
       assert(isOk(result));
@@ -159,7 +290,7 @@ describe("Controller", () => {
       mockSyncClient.sync = vi.fn(() => mockGenerator);
 
       const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({ fn: mockFn });
+      await controller.start({ point: "tip", fn: mockFn });
       await controller.waitForCompletion();
 
       expect(mockFn).toHaveBeenCalledTimes(1);
@@ -179,7 +310,7 @@ describe("Controller", () => {
       mockSyncClient.sync = vi.fn(() => mockGenerator);
 
       const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({ fn: mockFn, filter: mockFilter });
+      await controller.start({ point: "tip", fn: mockFn, filter: mockFilter });
       await controller.waitForCompletion();
 
       expect(mockFilter).toHaveBeenCalledTimes(1);
@@ -206,7 +337,7 @@ describe("Controller", () => {
       mockSyncClient.sync = vi.fn(() => mockGenerator);
 
       const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({ fn: mockFn });
+      await controller.start({ point: "tip", fn: mockFn });
       await controller.waitForCompletion();
 
       expect(mockFn).toHaveBeenCalledTimes(1);
@@ -232,7 +363,11 @@ describe("Controller", () => {
       mockSyncClient.sync = vi.fn(() => mockGenerator);
 
       const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({ fn: mockFn, takeUntil: mockTakeUntil });
+      await controller.start({
+        point: "tip",
+        fn: mockFn,
+        takeUntil: mockTakeUntil,
+      });
       await controller.waitForCompletion();
 
       expect(mockFn).toHaveBeenCalledTimes(1);
@@ -251,7 +386,7 @@ describe("Controller", () => {
       mockSyncClient.sync = vi.fn(() => mockGenerator);
 
       const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({ fn: async () => {} });
+      await controller.start({ point: "tip", fn: async () => {} });
       await controller.waitForCompletion();
 
       assert(controller.state.status !== "idle");
@@ -269,7 +404,7 @@ describe("Controller", () => {
       mockSyncClient.sync = vi.fn(() => mockGenerator);
 
       const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({ fn: async () => {} });
+      await controller.start({ point: "tip", fn: async () => {} });
       await controller.waitForCompletion();
 
       assert(controller.state.status !== "idle");
@@ -297,7 +432,7 @@ describe("Controller", () => {
       mockSyncClient.sync = vi.fn(() => mockGenerator);
 
       const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({ fn: mockFn });
+      await controller.start({ point: "tip", fn: mockFn });
       await controller.waitForCompletion();
 
       assert(controller.state.status === "crashed");
@@ -338,7 +473,7 @@ describe("Controller", () => {
         errorHandler,
       });
 
-      await controller.start({ fn: mockFn });
+      await controller.start({ point: "tip", fn: mockFn });
       await controller.waitForCompletion();
 
       expect(mockFn).toHaveBeenCalledTimes(2);
@@ -363,7 +498,7 @@ describe("Controller", () => {
         logger: mockLogger,
       });
 
-      await controller.start({ fn: async () => {} });
+      await controller.start({ point: "tip", fn: async () => {} });
       await controller.waitForCompletion();
 
       expect(mockLogger).toHaveBeenCalled();
@@ -391,7 +526,7 @@ describe("Controller", () => {
         logger: mockLogger,
       });
 
-      await controller.start({ fn: async () => {} });
+      await controller.start({ point: "tip", fn: async () => {} });
       await controller.waitForCompletion();
 
       expect(controller.state.status).not.toBe("crashed");

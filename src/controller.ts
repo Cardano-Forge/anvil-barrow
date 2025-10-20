@@ -12,14 +12,19 @@ export class Controller<TSchema extends Schema = Schema> {
   };
 
   protected _config: Required<ControllerConfig<TSchema>>;
+  protected _startOpts: Omit<ControllerStartOpts<TSchema>, "point">;
 
-  constructor(config: ControllerConfig<TSchema>) {
+  constructor(
+    config: ControllerConfig<TSchema>,
+    startOpts: Omit<ControllerStartOpts<TSchema>, "point"> = {},
+  ) {
     this._config = {
       syncClient: config.syncClient,
       errorHandler: config.errorHandler ?? new ErrorHandler(),
       logger: config.logger ?? noop,
       tracingConfig: config.tracingConfig ?? {},
     };
+    this._startOpts = startOpts;
 
     this._config.tracingConfig.metrics?.status?.record(
       controllerStatuses.indexOf(this._state.status),
@@ -39,7 +44,7 @@ export class Controller<TSchema extends Schema = Schema> {
       }
     }
 
-    const { point, ...startOpts } = opts;
+    const { point, ...startOpts } = { ...this._startOpts, ...opts };
 
     this._state = {
       status: "running",
@@ -224,7 +229,7 @@ export class Controller<TSchema extends Schema = Schema> {
 
           const processingStart = Date.now();
 
-          const res = await opts.fn(event);
+          const res = await opts.fn?.(event);
 
           const processingTime = Date.now() - processingStart;
 
@@ -514,13 +519,13 @@ export type ControllerConfig<TSchema extends Schema = Schema> = {
 };
 
 export type ControllerStartOpts<TSchema extends Schema = Schema> = {
+  /** Starting point for syncing (slot and block ID) */
+  point: Schema["startingPoint"];
   /** Function that handles sync events */
-  fn: (
+  fn?: (
     event: SyncEvent<TSchema>,
     // biome-ignore lint/suspicious/noConfusingVoidType: Allow void for better DX
   ) => MaybePromise<{ done: boolean } | undefined | void>;
-  /** Starting point for syncing (slot and block ID) */
-  point: Schema["startingPoint"];
   /** Throttle duration for sync events */
   throttle?: [number, Unit];
   /** Function to filter sync events */
