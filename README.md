@@ -183,7 +183,30 @@ A sync job can complete in two ways:
    await controller.start({
      fn: (event) => { /* process event */ },
      point: startPoint,
-     takeUntil: (state) => state.tip.slot >= targetSlot,
+     takeUntil: ({ state }) => state.meta.syncTip?.slot >= targetSlot,
+   });
+   ```
+
+   **Note**: By default, `takeUntil` runs on ALL events, including filtered ones. This allows you to stop syncing based on conditions that don't depend on event processing:
+
+   ```typescript
+   await controller.start({
+     fn: (event) => { /* process event */ },
+     filter: (event) => event.type === "apply", // Only process apply events
+     point: startPoint,
+     takeUntil: ({ state }) => state.counters.filterCount >= 100, // Stop after 100 filtered events
+   });
+   ```
+
+   To run `takeUntil` only on processed events
+
+   ```typescript
+   await controller.start({
+     fn: (event) => { /* process event */ },
+     filter: (event) => event.type === "apply",
+     point: startPoint,
+     takeUntil: ({ state }) => state.counters.applyCount >= 10,
+     skipTakeUntilOnFiltered: true, // Don't evaluate takeUntil on filtered events
    });
    ```
 
@@ -208,7 +231,8 @@ Configuration properties:
 - `fn` (optional): Function that handles sync events
 - `throttle` (optional): Throttle duration for sync events
 - `filter` (optional): Function to filter sync events
-- `takeUntil` (optional): Function that returns true to stop syncing
+- `takeUntil` (optional): Function that returns true to stop syncing. By default, this function runs on ALL events (including filtered events)
+- `skipTakeUntilOnFiltered` (optional): When true, skip evaluating `takeUntil` on filtered events (default: false)
 
 #### Data Structures
 

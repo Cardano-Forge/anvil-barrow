@@ -375,6 +375,157 @@ describe("Controller", () => {
       expect(controller.state.status).toBe("done");
     });
 
+    it("should call takeUntil on filtered events by default", async () => {
+      const mockFn = vi.fn();
+      const mockFilter = vi.fn().mockResolvedValue(false);
+      const mockTakeUntil = vi.fn().mockResolvedValue(false);
+
+      mockGenerator = (async function* () {
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "1", height: 1, slot: 1 },
+          tip: { slot: 1, id: "1", height: 1 },
+        };
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "2", height: 2, slot: 2 },
+          tip: { slot: 2, id: "2", height: 2 },
+        };
+      })();
+      mockSyncClient.sync = vi.fn(() => mockGenerator);
+
+      const controller = new Controller({ syncClient: mockSyncClient });
+      await controller.start({
+        point: "tip",
+        fn: mockFn,
+        filter: mockFilter,
+        takeUntil: mockTakeUntil,
+      });
+      await controller.waitForCompletion();
+
+      expect(mockFilter).toHaveBeenCalledTimes(2);
+      expect(mockFn).not.toHaveBeenCalled();
+      expect(mockTakeUntil).toHaveBeenCalledTimes(2);
+      assert(controller.state.status !== "idle");
+      expect(controller.state.counters.filterCount).toBe(2);
+    });
+
+    it("should stop on filtered events when takeUntil returns true", async () => {
+      const mockFn = vi.fn();
+      const mockFilter = vi.fn().mockResolvedValue(false);
+      const mockTakeUntil = vi.fn().mockResolvedValue(true);
+
+      mockGenerator = (async function* () {
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "1", height: 1, slot: 1 },
+          tip: { slot: 1, id: "1", height: 1 },
+        };
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "2", height: 2, slot: 2 },
+          tip: { slot: 2, id: "2", height: 2 },
+        };
+      })();
+      mockSyncClient.sync = vi.fn(() => mockGenerator);
+
+      const controller = new Controller({ syncClient: mockSyncClient });
+      await controller.start({
+        point: "tip",
+        fn: mockFn,
+        filter: mockFilter,
+        takeUntil: mockTakeUntil,
+      });
+      await controller.waitForCompletion();
+
+      expect(mockFilter).toHaveBeenCalledTimes(1);
+      expect(mockFn).not.toHaveBeenCalled();
+      expect(mockTakeUntil).toHaveBeenCalledTimes(1);
+      assert(controller.state.status === "done");
+      expect(controller.state.counters.filterCount).toBe(1);
+    });
+
+    it("should not call takeUntil on filtered events when skipTakeUntilOnFiltered is true", async () => {
+      const mockFn = vi.fn();
+      const mockFilter = vi.fn().mockResolvedValue(false);
+      const mockTakeUntil = vi.fn().mockResolvedValue(true);
+
+      mockGenerator = (async function* () {
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "1", height: 1, slot: 1 },
+          tip: { slot: 1, id: "1", height: 1 },
+        };
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "2", height: 2, slot: 2 },
+          tip: { slot: 2, id: "2", height: 2 },
+        };
+      })();
+      mockSyncClient.sync = vi.fn(() => mockGenerator);
+
+      const controller = new Controller({ syncClient: mockSyncClient });
+      await controller.start({
+        point: "tip",
+        fn: mockFn,
+        filter: mockFilter,
+        takeUntil: mockTakeUntil,
+        skipTakeUntilOnFiltered: true,
+      });
+      await controller.waitForCompletion();
+
+      expect(mockFilter).toHaveBeenCalledTimes(2);
+      expect(mockFn).not.toHaveBeenCalled();
+      expect(mockTakeUntil).not.toHaveBeenCalled();
+      assert(controller.state.status !== "idle");
+      expect(controller.state.counters.filterCount).toBe(2);
+    });
+
+    it("should call takeUntil on both filtered and processed events", async () => {
+      const mockFn = vi.fn();
+      let filterCallCount = 0;
+      const mockFilter = vi.fn().mockImplementation(async () => {
+        filterCallCount++;
+        return filterCallCount % 2 === 0; // Process even-numbered calls (2, 4, 6, etc.)
+      });
+      const mockTakeUntil = vi.fn().mockResolvedValue(false);
+
+      mockGenerator = (async function* () {
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "1", height: 1, slot: 1 },
+          tip: { slot: 1, id: "1", height: 1 },
+        };
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "2", height: 2, slot: 2 },
+          tip: { slot: 2, id: "2", height: 2 },
+        };
+        yield {
+          type: "apply",
+          block: { type: "praos", era: "babbage", id: "3", height: 3, slot: 3 },
+          tip: { slot: 3, id: "3", height: 3 },
+        };
+      })();
+      mockSyncClient.sync = vi.fn(() => mockGenerator);
+
+      const controller = new Controller({ syncClient: mockSyncClient });
+      await controller.start({
+        point: "tip",
+        fn: mockFn,
+        filter: mockFilter,
+        takeUntil: mockTakeUntil,
+      });
+      await controller.waitForCompletion();
+
+      expect(mockFilter).toHaveBeenCalledTimes(3);
+      expect(mockFn).toHaveBeenCalledTimes(1); // Only event 2 processed (even call count)
+      expect(mockTakeUntil).toHaveBeenCalledTimes(3); // Called on all events
+      assert(controller.state.status === "paused");
+      expect(controller.state.counters.filterCount).toBe(2); // Events 1 and 3 filtered
+      expect(controller.state.counters.applyCount).toBe(1); // Event 2 only
+    });
+
     it("should increment apply counter", async () => {
       mockGenerator = (async function* () {
         yield {

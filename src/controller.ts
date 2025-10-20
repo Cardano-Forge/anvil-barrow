@@ -219,6 +219,15 @@ export class Controller<TSchema extends Schema = Schema> {
               type: "event.filtered",
               data: { event: event.type },
             });
+
+            if (
+              !opts.skipTakeUntilOnFiltered &&
+              (await opts.takeUntil?.({ lastEvent: event, state: this._state }))
+            ) {
+              done = true;
+              break;
+            }
+
             continue;
           }
 
@@ -535,6 +544,11 @@ export type ControllerStartOpts<TSchema extends Schema = Schema> = {
     lastEvent: SyncEvent<TSchema>;
     state: ControllerStateRunning<TSchema>;
   }) => MaybePromise<boolean>;
+  /**
+   * When true, skip evaluating takeUntil on filtered events.
+   * Default: false (takeUntil runs on all events including filtered ones)
+   */
+  skipTakeUntilOnFiltered?: boolean;
 };
 
 export type ControllerStateCounters = {
