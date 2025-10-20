@@ -1,7 +1,16 @@
 import type { LogEvent } from "./controller";
 import type { Schema } from "./types";
 
-export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "trace";
+export const logLevels = [
+  "fatal",
+  "error",
+  "warn",
+  "info",
+  "debug",
+  "trace",
+] as const;
+
+export type LogLevel = (typeof logLevels)[number];
 
 export function getLogLevel<TSchema extends Schema>(
   logEvent: LogEvent<TSchema>,
