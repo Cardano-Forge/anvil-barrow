@@ -21,8 +21,11 @@ export class SocketError extends Error {
 }
 
 type ProcessingErrorEvent<TSchema extends Schema> =
-  | { type: "apply"; block: TSchema["point"] | TSchema["tipOrOrigin"] }
-  | { type: "reset"; point: TSchema["pointOrOrigin"] };
+  | {
+      type: "apply";
+      block: Pick<TSchema["block"], "type" | "id" | "slot" | "height">;
+    }
+  | { type: "reset"; point: TSchema["resetPoint"] };
 
 export class ProcessingError<TSchema extends Schema> extends Error {
   constructor(
@@ -43,12 +46,16 @@ export class ProcessingError<TSchema extends Schema> extends Error {
         ? {
             type: "apply",
             block: {
+              type: event.block.type,
               id: event.block.id,
-              slot: event.block.height,
+              slot: event.block.slot,
               height: event.block.height,
             },
           }
-        : { type: "reset", point: event.point },
+        : {
+            type: "reset",
+            point: event.point,
+          },
       parseError(originalError).message,
       { cause: originalError },
     );

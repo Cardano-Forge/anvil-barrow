@@ -275,12 +275,6 @@ export class Controller<TSchema extends Schema = Schema> {
             this._config.tracingConfig.metrics?.isSynced?.record(0);
           }
 
-          const processedCount =
-            this._state.counters.applyCount + this._state.counters.resetCount;
-          if (processedCount === 0 && !this._state.meta.startingPoint) {
-            this._state.meta.startingPoint = this._state.meta.syncTip;
-          }
-
           const eventCounter = `${event.type}Count` as const;
           this._state.counters[eventCounter] += 1;
           this._config.tracingConfig.metrics?.[eventCounter]?.record(
@@ -420,7 +414,7 @@ export type LogEvent<TSchema extends Schema = Schema> =
       type: "controller.started";
       timestamp: number;
       data: {
-        point?: TSchema["pointOrOrigin"];
+        point: TSchema["startingPoint"];
         startOpts: Omit<ControllerStartOpts<TSchema>, "point">;
         meta: ControllerStateMeta<TSchema>;
       };
@@ -438,7 +432,7 @@ export type LogEvent<TSchema extends Schema = Schema> =
       type: "controller.resumed";
       timestamp: number;
       data: {
-        resumePoint?: TSchema["pointOrOrigin"];
+        resumePoint: TSchema["startingPoint"] | TSchema["tip"];
         counters: ControllerStateCounters;
         meta: ControllerStateMeta<TSchema>;
       };
@@ -507,7 +501,7 @@ export type LogEvent<TSchema extends Schema = Schema> =
       timestamp: number;
       data: {
         attempt: number;
-        resumePoint?: TSchema["pointOrOrigin"];
+        resumePoint?: TSchema["startingPoint"] | TSchema["tip"];
         originalError: Error;
       };
     };
@@ -526,7 +520,7 @@ export type ControllerStartOpts<TSchema extends Schema = Schema> = {
     // biome-ignore lint/suspicious/noConfusingVoidType: Allow void for better DX
   ) => MaybePromise<{ done: boolean } | undefined | void>;
   /** Starting point for syncing (slot and block ID) */
-  point?: Schema["pointOrOrigin"];
+  point: Schema["startingPoint"];
   /** Throttle duration for sync events */
   throttle?: [number, Unit];
   /** Function to filter sync events */
@@ -547,9 +541,9 @@ export type ControllerStateCounters = {
 
 export type ControllerStateMeta<TSchema extends Schema = Schema> = {
   startOpts: Omit<ControllerStartOpts<TSchema>, "point">;
-  startingPoint: TSchema["pointOrOrigin"] | undefined;
-  syncTip: TSchema["point"] | TSchema["tipOrOrigin"] | undefined;
-  chainTip: TSchema["tipOrOrigin"] | undefined;
+  startingPoint: TSchema["startingPoint"];
+  syncTip: TSchema["tip"] | undefined;
+  chainTip: TSchema["tip"] | undefined;
   lastError: Error | undefined;
 };
 

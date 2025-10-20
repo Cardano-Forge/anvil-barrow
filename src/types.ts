@@ -1,13 +1,17 @@
-export type Point = {
-  slot: number;
-  id: string;
-};
+export type Point =
+  | {
+      slot: number;
+      id: string;
+    }
+  | string;
 
-export type Tip = {
-  slot: number;
-  id: string;
-  height: number;
-};
+export type Tip =
+  | {
+      slot: number;
+      id: string;
+      height: number;
+    }
+  | string;
 
 export type Block =
   | {
@@ -15,6 +19,7 @@ export type Block =
       era: "byron";
       id: string;
       height: number;
+      slot?: undefined;
     }
   | {
       type: "bft";
@@ -33,32 +38,35 @@ export type Block =
 
 export type Schema<
   TBlock extends Block = Block,
-  TPoint extends Point = Point,
+  TResetPoint extends Point = Point,
+  TStartingPoint extends Point = Point,
   TTip extends Tip = Tip,
-  TOrigin extends string = string,
 > = {
   block: TBlock;
-  point: TPoint;
+  resetPoint: TResetPoint;
+  startingPoint: TStartingPoint;
   tip: TTip;
-  pointOrOrigin: TPoint | TOrigin;
-  tipOrOrigin: TTip | TOrigin;
 };
 
 export type SyncEvent<TSchema extends Schema> =
-  | { type: "apply"; block: TSchema["block"]; tip: TSchema["tipOrOrigin"] }
+  | {
+      type: "apply";
+      block: TSchema["block"];
+      tip: TSchema["tip"];
+    }
   | {
       type: "reset";
-      point: TSchema["pointOrOrigin"];
-      tip: TSchema["tipOrOrigin"];
+      point: TSchema["resetPoint"];
+      tip: TSchema["tip"];
     };
 
 export type SyncClientSyncOpts<TSchema extends Schema> = {
-  point?: TSchema["pointOrOrigin"];
+  point: TSchema["startingPoint"];
 };
 
 export type SyncClient<TSchema extends Schema> = {
   sync: (
-    opts?: SyncClientSyncOpts<TSchema>,
+    opts: SyncClientSyncOpts<TSchema>,
   ) => AsyncGenerator<SyncEvent<TSchema>, void>;
 };
 
