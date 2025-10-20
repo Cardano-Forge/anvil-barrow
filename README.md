@@ -223,16 +223,44 @@ A sync job can complete in two ways:
    });
    ```
 
+#### Throttling
+
+The `throttle` option allows you to control the rate of event processing by adding delays between events.
+
+**Default behavior**: Throttle applies to ALL events, including filtered ones:
+
+```typescript
+await controller.start({
+  fn: (event) => { /* process event */ },
+  filter: (event) => event.type === "apply", // Only process apply events
+  point: startPoint,
+  throttle: [100, "milliseconds"], // Delays after ALL events (filtered and processed)
+});
+```
+
+**Opt-out for filtered events**: To only throttle processed events:
+
+```typescript
+await controller.start({
+  fn: (event) => { /* process event */ },
+  filter: (event) => event.type === "apply",
+  point: startPoint,
+  throttle: [100, "milliseconds"],
+  skipThrottleOnFiltered: true, // Only throttle processed events
+});
+```
+
 ### Sync Job Configuration
 
 Configuration properties:
 
 - `point` (required): Starting point for syncing (slot and block ID)
 - `fn` (optional): Function that handles sync events
-- `throttle` (optional): Throttle duration for sync events
+- `throttle` (optional): Throttle duration for sync events. By default, throttle applies to ALL events (including filtered events)
 - `filter` (optional): Function to filter sync events
 - `takeUntil` (optional): Function that returns true to stop syncing. By default, this function runs on ALL events (including filtered events)
 - `skipTakeUntilOnFiltered` (optional): When true, skip evaluating `takeUntil` on filtered events (default: false)
+- `skipThrottleOnFiltered` (optional): When true, skip applying throttle delay on filtered events (default: false)
 
 #### Data Structures
 

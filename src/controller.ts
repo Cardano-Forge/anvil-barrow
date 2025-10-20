@@ -193,6 +193,20 @@ export class Controller<TSchema extends Schema = Schema> {
     try {
       let done = false;
 
+      const applyThrottle = async () => {
+        if (opts.throttle) {
+          const [value, unit] = opts.throttle;
+          const delay = toMilliseconds(value, unit);
+
+          this._emitLogEvent({
+            type: "throttle.delay",
+            data: { delay, unit },
+          });
+
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      };
+
       let lastArrivalTime: number | undefined;
 
       for await (const event of this._state.generator) {
@@ -226,6 +240,10 @@ export class Controller<TSchema extends Schema = Schema> {
             ) {
               done = true;
               break;
+            }
+
+            if (!opts.skipThrottleOnFiltered) {
+              await applyThrottle();
             }
 
             continue;
@@ -306,17 +324,7 @@ export class Controller<TSchema extends Schema = Schema> {
             break;
           }
 
-          if (opts.throttle) {
-            const [value, unit] = opts.throttle;
-            const delay = toMilliseconds(value, unit);
-
-            this._emitLogEvent({
-              type: "throttle.delay",
-              data: { delay, unit },
-            });
-
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
+          await applyThrottle();
         } catch (error) {
           throw ProcessingError.fromSyncEvent(event, error);
         }
@@ -549,6 +557,11 @@ export type ControllerStartOpts<TSchema extends Schema = Schema> = {
    * Default: false (takeUntil runs on all events including filtered ones)
    */
   skipTakeUntilOnFiltered?: boolean;
+  /**
+   * When true, skip applying throttle delay on filtered events.
+   * Default: false (throttle applies to all events including filtered ones)
+   */
+  skipThrottleOnFiltered?: boolean;
 };
 
 export type ControllerStateCounters = {
