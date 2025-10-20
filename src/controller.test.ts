@@ -445,42 +445,6 @@ describe("Controller", () => {
       expect(controller.state.counters.filterCount).toBe(1);
     });
 
-    it("should not call takeUntil on filtered events when skipTakeUntilOnFiltered is true", async () => {
-      const mockFn = vi.fn();
-      const mockFilter = vi.fn().mockResolvedValue(false);
-      const mockTakeUntil = vi.fn().mockResolvedValue(true);
-
-      mockGenerator = (async function* () {
-        yield {
-          type: "apply",
-          block: { type: "praos", era: "babbage", id: "1", height: 1, slot: 1 },
-          tip: { slot: 1, id: "1", height: 1 },
-        };
-        yield {
-          type: "apply",
-          block: { type: "praos", era: "babbage", id: "2", height: 2, slot: 2 },
-          tip: { slot: 2, id: "2", height: 2 },
-        };
-      })();
-      mockSyncClient.sync = vi.fn(() => mockGenerator);
-
-      const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({
-        point: "tip",
-        fn: mockFn,
-        filter: mockFilter,
-        takeUntil: mockTakeUntil,
-        skipTakeUntilOnFiltered: true,
-      });
-      await controller.waitForCompletion();
-
-      expect(mockFilter).toHaveBeenCalledTimes(2);
-      expect(mockFn).not.toHaveBeenCalled();
-      expect(mockTakeUntil).not.toHaveBeenCalled();
-      assert(controller.state.status !== "idle");
-      expect(controller.state.counters.filterCount).toBe(2);
-    });
-
     it("should call takeUntil on both filtered and processed events", async () => {
       const mockFn = vi.fn();
       let filterCallCount = 0;
@@ -526,7 +490,7 @@ describe("Controller", () => {
       expect(controller.state.counters.applyCount).toBe(1); // Event 2 only
     });
 
-    it("should apply throttle on filtered events by default", async () => {
+    it("should apply throttle on filtered events", async () => {
       vi.useFakeTimers();
       try {
         const mockFn = vi.fn();
@@ -579,40 +543,6 @@ describe("Controller", () => {
       } finally {
         vi.useRealTimers();
       }
-    });
-
-    it("should not apply throttle on filtered events when skipThrottleOnFiltered is true", async () => {
-      const mockFn = vi.fn();
-      const mockFilter = vi.fn().mockResolvedValue(false);
-
-      mockGenerator = (async function* () {
-        yield {
-          type: "apply",
-          block: { type: "praos", era: "babbage", id: "1", height: 1, slot: 1 },
-          tip: { slot: 1, id: "1", height: 1 },
-        };
-        yield {
-          type: "apply",
-          block: { type: "praos", era: "babbage", id: "2", height: 2, slot: 2 },
-          tip: { slot: 2, id: "2", height: 2 },
-        };
-      })();
-      mockSyncClient.sync = vi.fn(() => mockGenerator);
-
-      const controller = new Controller({ syncClient: mockSyncClient });
-      await controller.start({
-        point: "tip",
-        fn: mockFn,
-        filter: mockFilter,
-        throttle: [50, "milliseconds"],
-        skipThrottleOnFiltered: true,
-      });
-      await controller.waitForCompletion();
-
-      expect(mockFilter).toHaveBeenCalledTimes(2);
-      expect(mockFn).not.toHaveBeenCalled();
-      assert(controller.state.status !== "idle");
-      expect(controller.state.counters.filterCount).toBe(2);
     });
 
     it("should apply throttle on both filtered and processed events", async () => {
