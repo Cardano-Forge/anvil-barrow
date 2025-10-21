@@ -183,7 +183,35 @@ A sync job can complete in two ways:
    await controller.start({
      fn: (event) => { /* process event */ },
      point: startPoint,
-     takeUntil: (state) => state.tip.slot >= targetSlot,
+     takeUntil: ({ state }) => state.meta.syncTip?.slot >= targetSlot,
+   });
+   ```
+
+   **Note**: `takeUntil` runs on ALL events, including filtered ones. This allows you to stop syncing based on conditions that don't depend on event processing:
+
+   ```typescript
+   await controller.start({
+     fn: (event) => { /* process event */ },
+     filter: (event) => event.type === "apply", // Only process apply events
+     point: startPoint,
+     takeUntil: ({ state }) => state.counters.filterCount >= 100, // Stop after 100 filtered events
+   });
+   ```
+
+   To run `takeUntil` only on processed events, you can use the `isFilteredOut` property:
+
+   ```typescript
+   await controller.start({
+     fn: (event) => { /* process event */ },
+     filter: (event) => event.type === "apply",
+     point: startPoint,
+     takeUntil: ({ lastEvent, state }) => {
+       // Return early if the event was filtered out
+       if (lastEvent.isFilteredOut) return false;
+
+       // Only count processed events
+       return state.counters.applyCount >= 10;
+     },
    });
    ```
 
@@ -200,15 +228,28 @@ A sync job can complete in two ways:
    });
    ```
 
+#### Throttling
+
+The `throttle` option allows you to control the rate of event processing by adding delays between events. Throttle is applied to ALL events, including filtered ones:
+
+```typescript
+await controller.start({
+  fn: (event) => { /* process event */ },
+  filter: (event) => event.type === "apply", // Only process apply events
+  point: startPoint,
+  throttle: [100, "milliseconds"], // Delays after ALL events (filtered and processed)
+});
+```
+
 ### Sync Job Configuration
 
 Configuration properties:
 
 - `point` (required): Starting point for syncing (slot and block ID)
 - `fn` (optional): Function that handles sync events
-- `throttle` (optional): Throttle duration for sync events
+- `throttle` (optional): Throttle duration for sync events. Throttle applies to ALL events (including filtered events)
 - `filter` (optional): Function to filter sync events
-- `takeUntil` (optional): Function that returns true to stop syncing
+- `takeUntil` (optional): Function that returns true to stop syncing. This function runs on ALL events (including filtered events). Use `lastEvent.isFilteredOut` to handle filtered events differently
 
 #### Data Structures
 

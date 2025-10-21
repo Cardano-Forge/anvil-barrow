@@ -193,6 +193,20 @@ export class Controller<TSchema extends Schema = Schema> {
     try {
       let done = false;
 
+      const applyThrottle = async () => {
+        if (opts.throttle) {
+          const [value, unit] = opts.throttle;
+          const delay = toMilliseconds(value, unit);
+
+          this._emitLogEvent({
+            type: "throttle.delay",
+            data: { delay, unit },
+          });
+
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      };
+
       let lastArrivalTime: number | undefined;
 
       for await (const event of this._state.generator) {
@@ -210,7 +224,11 @@ export class Controller<TSchema extends Schema = Schema> {
         });
 
         try {
+          let processingResult: { done: boolean } | undefined;
+          let isFilteredOut = false;
+
           if (opts.filter && !(await opts.filter(event))) {
+            isFilteredOut = true;
             this._state.counters.filterCount += 1;
             this._config.tracingConfig.metrics?.filterCount?.record(
               this._state.counters.filterCount,
@@ -219,95 +237,87 @@ export class Controller<TSchema extends Schema = Schema> {
               type: "event.filtered",
               data: { event: event.type },
             });
-            continue;
-          }
-
-          this._emitLogEvent({
-            type: "event.processing",
-            data: { event: event.type },
-          });
-
-          const processingStart = Date.now();
-
-          const res = await opts.fn?.(event);
-
-          const processingTime = Date.now() - processingStart;
-
-          this._config.tracingConfig.metrics?.processingTime?.record(
-            processingTime,
-          );
-
-          this._emitLogEvent({
-            type: "event.processed",
-            data: {
-              event: event.type,
-              result: res ?? undefined,
-              processingTime,
-            },
-          });
-
-          this._state.meta.chainTip = event.tip;
-          if (typeof event.tip === "object") {
-            this._config.tracingConfig.metrics?.chainTipSlot?.record(
-              event.tip.slot,
-            );
-            this._config.tracingConfig.metrics?.chainTipHeight?.record(
-              event.tip.height,
-            );
-          }
-          if (event.type === "apply" && event.block.type !== "ebb") {
-            this._state.meta.syncTip = {
-              slot: event.block.slot,
-              id: event.block.id,
-              height: event.block.height,
-            };
-            this._config.tracingConfig.metrics?.syncTipSlot?.record(
-              event.block.slot,
-            );
-            this._config.tracingConfig.metrics?.syncTipHeight?.record(
-              event.block.height,
-            );
-          }
-
-          if (
-            event.type === "apply" &&
-            event.block.type !== "ebb" &&
-            typeof event.tip !== "string" &&
-            event.block.height === event.tip.height
-          ) {
-            this._config.tracingConfig.metrics?.isSynced?.record(1);
           } else {
-            this._config.tracingConfig.metrics?.isSynced?.record(0);
+            this._emitLogEvent({
+              type: "event.processing",
+              data: { event: event.type },
+            });
+
+            const processingStart = Date.now();
+
+            processingResult = (await opts.fn?.(event)) ?? undefined;
+
+            const processingTime = Date.now() - processingStart;
+
+            this._config.tracingConfig.metrics?.processingTime?.record(
+              processingTime,
+            );
+
+            this._emitLogEvent({
+              type: "event.processed",
+              data: {
+                event: event.type,
+                result: processingResult,
+                processingTime,
+              },
+            });
+
+            this._state.meta.chainTip = event.tip;
+            if (typeof event.tip === "object") {
+              this._config.tracingConfig.metrics?.chainTipSlot?.record(
+                event.tip.slot,
+              );
+              this._config.tracingConfig.metrics?.chainTipHeight?.record(
+                event.tip.height,
+              );
+            }
+            if (event.type === "apply" && event.block.type !== "ebb") {
+              this._state.meta.syncTip = {
+                slot: event.block.slot,
+                id: event.block.id,
+                height: event.block.height,
+              };
+              this._config.tracingConfig.metrics?.syncTipSlot?.record(
+                event.block.slot,
+              );
+              this._config.tracingConfig.metrics?.syncTipHeight?.record(
+                event.block.height,
+              );
+            }
+
+            if (
+              event.type === "apply" &&
+              event.block.type !== "ebb" &&
+              typeof event.tip !== "string" &&
+              event.block.height === event.tip.height
+            ) {
+              this._config.tracingConfig.metrics?.isSynced?.record(1);
+            } else {
+              this._config.tracingConfig.metrics?.isSynced?.record(0);
+            }
+
+            const eventCounter = `${event.type}Count` as const;
+            this._state.counters[eventCounter] += 1;
+            this._config.tracingConfig.metrics?.[eventCounter]?.record(
+              this._state.counters[eventCounter],
+            );
+
+            this._config.errorHandler.reset();
+            this._config.tracingConfig.metrics?.errorCount?.record(0);
           }
 
-          const eventCounter = `${event.type}Count` as const;
-          this._state.counters[eventCounter] += 1;
-          this._config.tracingConfig.metrics?.[eventCounter]?.record(
-            this._state.counters[eventCounter],
-          );
-
-          this._config.errorHandler.reset();
-          this._config.tracingConfig.metrics?.errorCount?.record(0);
-
           if (
-            res?.done ||
-            (await opts.takeUntil?.({ lastEvent: event, state: this._state }))
+            processingResult?.done ||
+            (await opts.takeUntil?.({
+              lastEvent: { ...event, isFilteredOut },
+              state: this._state,
+            }))
           ) {
             done = true;
             break;
           }
 
-          if (opts.throttle) {
-            const [value, unit] = opts.throttle;
-            const delay = toMilliseconds(value, unit);
-
-            this._emitLogEvent({
-              type: "throttle.delay",
-              data: { delay, unit },
-            });
-
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
+          await applyThrottle();
         } catch (error) {
           throw ProcessingError.fromSyncEvent(event, error);
         }
@@ -532,7 +542,12 @@ export type ControllerStartOpts<TSchema extends Schema = Schema> = {
   filter?: (event: SyncEvent<TSchema>) => MaybePromise<boolean>;
   /** Function that returns true to stop syncing */
   takeUntil?: (data: {
-    lastEvent: SyncEvent<TSchema>;
+    lastEvent: SyncEvent<TSchema> & {
+      /**
+       * Whether the event was filtered out by the filter function
+       */
+      isFilteredOut: boolean;
+    };
     state: ControllerStateRunning<TSchema>;
   }) => MaybePromise<boolean>;
 };
