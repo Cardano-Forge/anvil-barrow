@@ -106,6 +106,7 @@ const syncClient = new OgmiosSyncClient({
 ```
 
 Configuration options:
+
 - `host`: Ogmios node hostname
 - `port`: Ogmios node port
 - `tls`: Enable TLS connection
@@ -137,7 +138,7 @@ const controller = new Controller(
     fn: (event) => {
       console.log(event);
     },
-  }
+  },
 );
 ```
 
@@ -166,7 +167,7 @@ await controller.waitForCompletion();
 **Pause and Resume:**
 
 ```typescript
-await controller.pause();  // Preserves state
+await controller.pause(); // Preserves state
 await controller.resume(); // Resumes from paused point
 ```
 
@@ -179,9 +180,12 @@ Calling `start()` on a paused job resets the state and starts from scratch.
 A sync job can complete in two ways:
 
 1. **Using `takeUntil`**: The `takeUntil` function returns `true`
+
    ```typescript
    await controller.start({
-     fn: (event) => { /* process event */ },
+     fn: (event) => {
+       /* process event */
+     },
      point: startPoint,
      takeUntil: ({ state }) => state.meta.syncTip?.slot >= targetSlot,
    });
@@ -191,7 +195,9 @@ A sync job can complete in two ways:
 
    ```typescript
    await controller.start({
-     fn: (event) => { /* process event */ },
+     fn: (event) => {
+       /* process event */
+     },
      filter: (event) => event.type === "apply", // Only process apply events
      point: startPoint,
      takeUntil: ({ state }) => state.counters.filterCount >= 100, // Stop after 100 filtered events
@@ -202,7 +208,9 @@ A sync job can complete in two ways:
 
    ```typescript
    await controller.start({
-     fn: (event) => { /* process event */ },
+     fn: (event) => {
+       /* process event */
+     },
      filter: (event) => event.type === "apply",
      point: startPoint,
      takeUntil: ({ lastEvent, state }) => {
@@ -234,7 +242,9 @@ The `throttle` option allows you to control the rate of event processing by addi
 
 ```typescript
 await controller.start({
-  fn: (event) => { /* process event */ },
+  fn: (event) => {
+    /* process event */
+  },
   filter: (event) => event.type === "apply", // Only process apply events
   point: startPoint,
   throttle: [100, "milliseconds"], // Delays after ALL events (filtered and processed)
@@ -254,20 +264,24 @@ Configuration properties:
 #### Data Structures
 
 **Sync Event:**
+
 - `type`: Event type
 - `block`: Block that was synced
 - `tip`: Current chain tip
 
 **Point:**
+
 - `slot`: Slot number
 - `id`: Block hash
 
 **Tip:**
+
 - `slot`: Slot number
 - `id`: Block hash
 - `height`: Block height
 
 **Block:**
+
 - `type`: Block type
 - `era`: Cardano era
 - `id`: Block hash
@@ -330,23 +344,28 @@ const controller = new Controller({
 ```
 
 The `otelTracingConfig` function accepts either:
+
 - A `Meter` instance
 - A configuration object with `name`, `version` (optional), and `opts` (optional)
 
 ### Available Metrics
 
-- `status`: Controller status
-- `sync_tip_slot`: Current sync slot number
-- `sync_tip_height`: Current sync block height
-- `chain_tip_slot`: Chain tip slot number
-- `chain_tip_height`: Chain tip block height
-- `is_synced`: Sync status (boolean)
-- `processing_time`: Event processing duration
-- `arrival_time`: Event arrival time
-- `apply_count`: Number of apply events
-- `reset_count`: Number of reset events
-- `filter_count`: Number of filtered events
-- `error_count`: Number of errors
+# Metric Definitions
+
+| Metric Key     | Type      | Name             | Description                       | Value Type | Unit         |
+| -------------- | --------- | ---------------- | --------------------------------- | ---------- | ------------ |
+| status         | gauge     | status           | Controller status                 | int        | -            |
+| syncTipSlot    | gauge     | sync_tip_slot    | Sync tip slot                     | int        | -            |
+| syncTipHeight  | gauge     | sync_tip_height  | Sync tip height                   | int        | -            |
+| chainTipSlot   | gauge     | chain_tip_slot   | Chain tip slot                    | int        | -            |
+| chainTipHeight | gauge     | chain_tip_height | Chain tip height                  | int        | -            |
+| isSynced       | gauge     | is_synced        | Is synced (1 = yes, 0 = no)       | int        | -            |
+| processingTime | histogram | processing_time  | Time it takes to process an event | -          | milliseconds |
+| arrivalTime    | histogram | arrival_time     | Time it takes to receive an event | -          | milliseconds |
+| applyCount     | gauge     | apply_count      | Number of apply events            | int        | -            |
+| resetCount     | gauge     | reset_count      | Number of reset events            | int        | -            |
+| filterCount    | gauge     | filter_count     | Number of filtered events         | int        | -            |
+| errorCount     | gauge     | error_count      | Number of errors                  | int        | -            |
 
 ## Examples
 
@@ -355,11 +374,13 @@ Example implementations are available in the `src/examples` directory.
 ### Running Examples
 
 1. Install dependencies:
+
    ```bash
    npm i
    ```
 
 2. Create a `.env` file in the project root:
+
    ```dotenv
    OGMIOS_NODE_HOST=<ogmios-node-host>
    OGMIOS_NODE_PORT=<ogmios-node-port>
