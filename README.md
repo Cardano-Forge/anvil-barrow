@@ -1,4 +1,4 @@
-# Barrow
+# Barrow [![Version](https://img.shields.io/npm/v/@ada-anvil/barrow?colorB=blue)](https://www.npmjs.com/package/@ada-anvil/barrow)
 
 Barrow is a framework for building blockchain indexing tools. It provides a simple API for defining and running indexing jobs on the Cardano blockchain.
 
