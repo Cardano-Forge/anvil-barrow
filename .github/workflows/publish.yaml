@@ -1,4 +1,4 @@
-name: Publish to GitHub Packages
+name: Publish
 on:
   workflow_dispatch:
   push:
@@ -38,17 +38,16 @@ jobs:
     needs: get-versions
     if: github.event_name != 'push'  || needs.get-versions.outputs.previous-version != needs.get-versions.outputs.updated-version
     permissions:
+      id-token: write
       packages: write
       contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          registry-url: https://npm.pkg.github.com/
+          node-version: 24
+          registry-url: https://registry.npmjs.org
       - run: npm ci
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run build
       # Append -{{ ref_name }} to version number if on not on production branch
       - name: Add pre-release flag
@@ -62,11 +61,8 @@ jobs:
         if: github.ref_name != 'main'
         working-directory: dist
         run: npm publish --tag ${{ github.ref_name }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish to registry
         if: github.ref_name == 'main'
         working-directory: dist
         run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
