@@ -8,12 +8,12 @@
     "registry": "https://registry.npmjs.org/"
   },
   "bugs": {
-    "url": "https://github.com/Cardano-Forge/barrow/issues"
+    "url": "https://github.com/Cardano-Forge/anvil-barrow/issues"
   },
-  "homepage": "https://github.com/Cardano-Forge/barrow",
+  "homepage": "https://github.com/Cardano-Forge/anvil-barrow",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Cardano-Forge/barrow.git"
+    "url": "git+https://github.com/Cardano-Forge/anvil-barrow.git"
   },
   "keywords": [
     "javascript",
