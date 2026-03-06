@@ -4,18 +4,8 @@ Barrow is a framework for building blockchain indexing tools. It provides a simp
 
 ## Installation
 
-To use Barrow, you must first configure your npm client to use the GitHub Package Registry.
-
-Create a `.npmrc` file in your project root and add the following line:
-
-```
-@cardano-forge:registry=https://npm.pkg.github.com
-```
-
-Then, install Barrow using npm:
-
 ```bash
-npm i @cardano-forge/barrow
+npm i @ada-anvil/barrow
 ```
 
 ## Usage
@@ -96,7 +86,7 @@ npm i @cardano-ogmios/client
 Create an instance of `OgmiosSyncClient`:
 
 ```typescript
-import { OgmiosSyncClient } from "@cardano-forge/barrow/ogmios";
+import { OgmiosSyncClient } from "@ada-anvil/barrow/ogmios";
 
 const syncClient = new OgmiosSyncClient({
   host: "localhost",
@@ -116,7 +106,7 @@ Configuration options:
 Create a `Controller` instance with your sync client:
 
 ```typescript
-import { Controller, ErrorHandler } from "@cardano-forge/barrow";
+import { Controller, ErrorHandler } from "@ada-anvil/barrow";
 
 const controller = new Controller({
   syncClient,
@@ -303,7 +293,7 @@ npm i pino
 Configure the logger:
 
 ```typescript
-import { pinoLogger } from "@cardano-forge/barrow/pino";
+import { pinoLogger } from "@ada-anvil/barrow/pino";
 import { pino } from "pino";
 
 const controller = new Controller({
@@ -331,7 +321,7 @@ npm i @opentelemetry/api
 Configure tracing:
 
 ```typescript
-import { otelTracingConfig } from "@cardano-forge/barrow/otel";
+import { otelTracingConfig } from "@ada-anvil/barrow/otel";
 
 const controller = new Controller({
   syncClient: new OgmiosSyncClient({
