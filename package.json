@@ -1,7 +1,7 @@
 {
   "name": "@ada-anvil/barrow",
   "description": "Chain indexing tools for the Cardano blockchain.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "author": "Ada anvil  ",
   "license": "Apache-2.0",
   "publishConfig": {
