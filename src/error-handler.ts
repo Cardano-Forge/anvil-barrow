@@ -167,7 +167,6 @@ export type HandlerResult = {
 
 export type ErrorHandlerFn = (
   error: unknown,
-  // biome-ignore lint/suspicious/noConfusingVoidType: Allow void for better DX
 ) => MaybePromise<HandlerResult | undefined | void>;
 
 export type RetryOptions = {

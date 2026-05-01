@@ -1,74 +1,29 @@
 import {
   type ConnectionConfig,
-  createChainSynchronizationClient,
   createInteractionContext,
-  type Schema as OgmiosSchemaNs,
+  createMempoolMonitoringClient,
 } from "@cardano-ogmios/client";
 import { isErr, parseError, wrap } from "trynot";
 import { SocketClosedError, SocketError } from "../errors";
-import type {
-  Counters,
-  Runner,
-  RunnerDef,
-  Schema,
-  SyncClientSyncOpts,
-  SyncEvent,
-} from "../types";
+import type { Schema, SyncClient, SyncEvent } from "../types";
 
-export type OgmiosSchema = Schema<
-  OgmiosSchemaNs.Block,
-  OgmiosSchemaNs.PointOrOrigin,
-  OgmiosSchemaNs.PointOrOrigin | "tip",
-  OgmiosSchemaNs.TipOrOrigin
+export type MempoolSchema = Schema<
+  { type: "ebb"; era: "byron"; id: string; height: number },
+  string,
+  string,
+  string
 >;
 
-type Event =
-  | { event: SyncEvent<OgmiosSchema>; requestNext: () => void }
-  | Error;
+type Event = { event: SyncEvent<MempoolSchema> } | Error;
 
-type OgmiosRunner = RunnerDef<
-  {
-    startOpts: Omit<SyncClientSyncOpts<OgmiosSchema>, "point">;
-    startingPoint: OgmiosSchema["startingPoint"];
-    syncTip: OgmiosSchema["tip"] | undefined;
-    chainTip: OgmiosSchema["tip"] | undefined;
-  },
-  SyncClientSyncOpts<OgmiosSchema>,
-  SyncEvent<OgmiosSchema>
->;
+export class MempoolSyncClient implements SyncClient<MempoolSchema> {
+  constructor(protected _config: ConnectionConfig) {}
 
-export class OgmiosSyncClient implements Runner<OgmiosRunner> {
-  constructor(private _config: ConnectionConfig) {}
-
-  createCounters(): Counters<SyncEvent<OgmiosSchema>> {
-    return {
-      applyCount: 0,
-      resetCount: 0,
-    };
-  }
-
-  createMeta(opts: SyncClientSyncOpts<OgmiosSchema>): OgmiosRunner["meta"] {
-    const { point, ...startOpts } = opts;
-    return {
-      startOpts,
-      startingPoint: point,
-      syncTip: undefined,
-      chainTip: undefined,
-    };
-  }
-
-  resume(meta: OgmiosRunner["meta"]) {
-    const resumePoint = meta.syncTip ?? meta.startingPoint;
-    return this.run({ ...meta.startOpts, point: resumePoint });
-  }
-
-  run(opts: SyncClientSyncOpts<OgmiosSchema>) {
+  sync() {
     const events: Array<Event> = [];
     let waitingResolve: ((status: { returned: boolean }) => void) | null = null;
 
-    const push = (
-      item: { event: SyncEvent<OgmiosSchema>; requestNext: () => void } | Error,
-    ) => {
+    const push = (item: Event) => {
       events.push(item);
       if (waitingResolve) {
         waitingResolve({ returned: false });
@@ -88,36 +43,42 @@ export class OgmiosSyncClient implements Runner<OgmiosRunner> {
         throw new SocketError(context.message, { cause: context });
       }
 
-      const client = await wrap(
-        createChainSynchronizationClient(context, {
-          rollForward: async ({ block, tip }, requestNext) => {
-            const event: SyncEvent<OgmiosSchema> = {
-              type: "apply",
-              block,
-              tip,
-            };
-            push({ event, requestNext });
-          },
-          rollBackward: async ({ point, tip }, requestNext) => {
-            const event: SyncEvent<OgmiosSchema> = {
-              type: "reset",
-              point,
-              tip,
-            };
-            push({ event, requestNext });
-          },
-        }),
-      );
+      const client = await wrap(createMempoolMonitoringClient(context));
       if (isErr(client)) {
         throw new SocketError(client.message, { cause: client });
       }
+
       try {
-        const points = opts.point === "tip" ? undefined : [opts.point];
-        await client.resume(points);
         while (true) {
+          console.log("ACQUIRING");
+          client
+            .acquireMempool()
+            .then(async () => {
+              console.log("getting next tx");
+              const txs: string[] = [];
+              let txHash = await client.nextTransaction();
+              while (txHash) {
+                console.log("txHash", txHash);
+                txs.push(txHash);
+                txHash = await client.nextTransaction();
+              }
+              push({
+                event: {
+                  type: "reset",
+                  point: txs.length.toString(),
+                  tip: JSON.stringify(txs),
+                },
+              });
+              console.log("done");
+            })
+            .catch((error) => {
+              push(parseError(error));
+            });
+
           let item = events.shift();
 
           while (!item) {
+            console.log("NO ITEM! WAITING");
             const status = await new Promise<{ returned: boolean }>(
               (resolve) => {
                 waitingResolve = resolve;
@@ -134,7 +95,6 @@ export class OgmiosSyncClient implements Runner<OgmiosRunner> {
           }
 
           yield item.event;
-          item.requestNext();
         }
       } catch (exception) {
         const error = parseError(exception);
