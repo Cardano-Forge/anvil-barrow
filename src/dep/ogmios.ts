@@ -6,14 +6,8 @@ import {
 } from "@cardano-ogmios/client";
 import { isErr, parseError, wrap } from "trynot";
 import { SocketClosedError, SocketError } from "../errors";
-import type {
-  Counters,
-  Runner,
-  RunnerDef,
-  Schema,
-  SyncClientSyncOpts,
-  SyncEvent,
-} from "../types";
+import type { IndexerEvent, Schema } from "../indexer";
+import type { Counters, Runner, RunnerDef } from "../types";
 
 export type OgmiosSchema = Schema<
   OgmiosSchemaNs.Block,
@@ -23,35 +17,32 @@ export type OgmiosSchema = Schema<
 >;
 
 type Event =
-  | { event: SyncEvent<OgmiosSchema>; requestNext: () => void }
+  | { event: IndexerEvent<OgmiosSchema>; requestNext: () => void }
   | Error;
 
-type OgmiosRunner = RunnerDef<
+export type OgmiosRunner = RunnerDef<
   {
-    startOpts: Omit<SyncClientSyncOpts<OgmiosSchema>, "point">;
     startingPoint: OgmiosSchema["startingPoint"];
     syncTip: OgmiosSchema["tip"] | undefined;
     chainTip: OgmiosSchema["tip"] | undefined;
   },
-  SyncClientSyncOpts<OgmiosSchema>,
-  SyncEvent<OgmiosSchema>
+  { point: OgmiosSchema["startingPoint"] },
+  IndexerEvent<OgmiosSchema>
 >;
 
-export class OgmiosSyncClient implements Runner<OgmiosRunner> {
+export class OgmiosIndexer implements Runner<OgmiosRunner> {
   constructor(private _config: ConnectionConfig) {}
 
-  createCounters(): Counters<SyncEvent<OgmiosSchema>> {
+  createCounters(): Counters<IndexerEvent<OgmiosSchema>> {
     return {
       applyCount: 0,
       resetCount: 0,
     };
   }
 
-  createMeta(opts: SyncClientSyncOpts<OgmiosSchema>): OgmiosRunner["meta"] {
-    const { point, ...startOpts } = opts;
+  createMeta(opts: OgmiosRunner["opts"]): OgmiosRunner["meta"] {
     return {
-      startOpts,
-      startingPoint: point,
+      startingPoint: opts.point,
       syncTip: undefined,
       chainTip: undefined,
     };
@@ -59,15 +50,17 @@ export class OgmiosSyncClient implements Runner<OgmiosRunner> {
 
   resume(meta: OgmiosRunner["meta"]) {
     const resumePoint = meta.syncTip ?? meta.startingPoint;
-    return this.run({ ...meta.startOpts, point: resumePoint });
+    return this.run({ point: resumePoint });
   }
 
-  run(opts: SyncClientSyncOpts<OgmiosSchema>) {
+  run(opts: OgmiosRunner["opts"]) {
     const events: Array<Event> = [];
     let waitingResolve: ((status: { returned: boolean }) => void) | null = null;
 
     const push = (
-      item: { event: SyncEvent<OgmiosSchema>; requestNext: () => void } | Error,
+      item:
+        | { event: IndexerEvent<OgmiosSchema>; requestNext: () => void }
+        | Error,
     ) => {
       events.push(item);
       if (waitingResolve) {
@@ -91,7 +84,7 @@ export class OgmiosSyncClient implements Runner<OgmiosRunner> {
       const client = await wrap(
         createChainSynchronizationClient(context, {
           rollForward: async ({ block, tip }, requestNext) => {
-            const event: SyncEvent<OgmiosSchema> = {
+            const event: IndexerEvent<OgmiosSchema> = {
               type: "apply",
               block,
               tip,
@@ -99,7 +92,7 @@ export class OgmiosSyncClient implements Runner<OgmiosRunner> {
             push({ event, requestNext });
           },
           rollBackward: async ({ point, tip }, requestNext) => {
-            const event: SyncEvent<OgmiosSchema> = {
+            const event: IndexerEvent<OgmiosSchema> = {
               type: "reset",
               point,
               tip,

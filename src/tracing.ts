@@ -92,8 +92,8 @@ export const metricDefs = {
 } satisfies Record<string, Metric>;
 export type Metrics = typeof metricDefs;
 
-export type TracingConfig = {
+export type TracingConfig<TMetrics extends Record<string, Metric> = Metrics> = {
   metrics?: {
-    [K in keyof Metrics]?: MetricTypes[Metrics[K]["type"]];
+    [K in keyof TMetrics]?: MetricTypes[TMetrics[K]["type"]];
   };
 };

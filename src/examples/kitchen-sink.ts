@@ -4,14 +4,18 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { type Level, pino } from "pino";
 import { assert, unwrap } from "trynot";
 import { Controller } from "../controller";
-import { type MempoolSchema, MempoolSyncClient } from "../dep/mem";
+import {
+  OgmiosIndexer,
+  type OgmiosRunner,
+  type OgmiosSchema,
+} from "../dep/ogmios";
 import { otelTracingConfig } from "../dep/otel";
 import { pinoLogger } from "../dep/pino";
 import { ErrorHandler } from "../error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "../errors";
 
 // Setup ogmios sync client
-const syncClient = new MempoolSyncClient({
+const runner = new OgmiosIndexer({
   host: process.env.OGMIOS_NODE_HOST,
   port: Number(process.env.OGMIOS_NODE_PORT),
   tls: Boolean(process.env.OGMIOS_NODE_TLS),
@@ -23,11 +27,11 @@ new NodeSDK({
     exporter: new OTLPMetricExporter(),
   }),
 }).start();
-const tracingConfig = otelTracingConfig();
+const tracing = otelTracingConfig();
 
 // Setup pino logger
 const level: Level = "trace";
-const logger = pinoLogger<MempoolSchema>(
+const logger = pinoLogger<OgmiosSchema>(
   pino({
     level,
     transport: {
@@ -61,22 +65,33 @@ const errorHandler = new ErrorHandler()
     ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, backoff: true }),
   );
 
-const controller = new Controller({
-  syncClient,
+const controller = new Controller<OgmiosRunner>({
+  runner,
   errorHandler,
   logger,
-  tracingConfig,
+  tracing,
 });
 
 async function main() {
   // Start sync job
   const result = await unwrap(
     controller.start({
-      fn: (syncEvent) => {
-        console.log("syncEvent", syncEvent);
+      // Throttle event arrival rate
+      throttle: [100, "milliseconds"],
+
+      // Only process a specific event
+      filter: (event) => {
+        return event.type === "apply" && event.block.height === 3859660;
       },
 
-      takeUntil: (data) => data.state.counters.resetCount >= 3,
+      // Complete sync job when event is processed
+      takeUntil: ({ state }) => {
+        return state.counters.applyCount >= 1;
+      },
+
+      fn: (_syncEvent) => {
+        // Process the sync event
+      },
 
       // Define the starting point
       point: {
