@@ -6,7 +6,7 @@ import { assert, unwrap } from "trynot";
 import { Controller } from "../controller";
 import { type MempoolRunnerDef, OgmiosMempool } from "../dep/ogmios";
 import { OtelTracer } from "../dep/otel";
-import { pinoLogger } from "../dep/pino";
+import { PinoLogger } from "../dep/pino";
 import { ErrorHandler } from "../error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "../errors";
 
@@ -27,7 +27,7 @@ const tracing = new OtelTracer();
 
 // Setup pino logger
 const level: Level = "trace";
-const logger = pinoLogger<MempoolRunnerDef>(
+const logger = new PinoLogger<MempoolRunnerDef>(
   pino({
     level,
     transport: {

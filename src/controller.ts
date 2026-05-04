@@ -28,7 +28,7 @@ export class Controller<TDef extends RunnerDef> {
     this._config = {
       runner: config.runner,
       errorHandler: config.errorHandler ?? new ErrorHandler(),
-      logger: config.logger ?? noop,
+      logger: config.logger ?? { log: noop },
       tracing: config.tracing ?? new ControllerTracer(),
     };
 
@@ -158,7 +158,7 @@ export class Controller<TDef extends RunnerDef> {
 
   private _emitLogEvent(logEvent: Omit<LogEvent<TDef>, "timestamp">): void {
     try {
-      this._config.logger({
+      this._config.logger?.log({
         ...logEvent,
         timestamp: Date.now(),
       } as LogEvent<TDef>);
@@ -455,10 +455,14 @@ export type LogEvent<TDef extends RunnerDef> =
       };
     };
 
+export type ControllerLogger<TDef extends RunnerDef> = {
+  log: (logEvent: LogEvent<TDef>) => void;
+};
+
 export type ControllerConfig<TDef extends RunnerDef> = {
   runner: Runner<TDef>;
   errorHandler?: ErrorHandler;
-  logger?: (logEvent: LogEvent<TDef>) => void;
+  logger?: ControllerLogger<TDef>;
   tracing?: ControllerTracer;
 };
 

@@ -6,7 +6,7 @@ import { assert, unwrap } from "trynot";
 import { Controller } from "../controller";
 import { OgmiosIndexer, type OgmiosSchema } from "../dep/ogmios";
 import { OtelIndexerTracer } from "../dep/otel";
-import { pinoLogger } from "../dep/pino";
+import { PinoLogger } from "../dep/pino";
 import { ErrorHandler } from "../error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "../errors";
 import type { IndexerRunnerDef } from "../indexer";
@@ -28,7 +28,7 @@ const tracing = new OtelIndexerTracer();
 
 // Setup pino logger
 const level: Level = "trace";
-const logger = pinoLogger<IndexerRunnerDef<OgmiosSchema>>(
+const logger = new PinoLogger<IndexerRunnerDef<OgmiosSchema>>(
   pino({
     level,
     transport: {

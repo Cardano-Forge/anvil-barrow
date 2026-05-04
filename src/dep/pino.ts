@@ -3,9 +3,11 @@ import type { LogEvent } from "../controller";
 import { getLogLevel } from "../logs";
 import type { RunnerDef } from "../types";
 
-export function pinoLogger<TDef extends RunnerDef>(logger: Logger) {
-  return (logEvent: LogEvent<TDef>) => {
+export class PinoLogger<TDef extends RunnerDef> {
+  constructor(private logger: Logger) {}
+
+  log(logEvent: LogEvent<TDef>) {
     const level = getLogLevel(logEvent);
-    logger[level](logEvent.data, logEvent.type);
-  };
+    this.logger[level](logEvent.data, logEvent.type);
+  }
 }
