@@ -82,11 +82,11 @@ async function main() {
 
       // Complete sync job when event is processed
       takeUntil: ({ state }) => {
-        return state.counters.txsCount > 1;
+        return state.counters.txsCount >= 1;
       },
 
-      fn: (event) => {
-        console.log("event", event, controller.state);
+      fn: (_event) => {
+        // Process the event
       },
     }),
   );

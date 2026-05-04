@@ -63,20 +63,16 @@ export class OgmiosMempool implements Runner<MempoolRunnerDef> {
 
       try {
         while (true) {
-          console.log("ACQUIRING");
           client
             .acquireMempool()
             .then(async () => {
-              console.log("getting next tx");
               const txs: string[] = [];
               let txHash = await client.nextTransaction();
               while (txHash) {
-                console.log("txHash", txHash);
                 txs.push(txHash);
                 txHash = await client.nextTransaction();
               }
               push({ event: { type: "txs", txs } });
-              console.log("done");
             })
             .catch((error) => {
               push(parseError(error));
@@ -85,7 +81,6 @@ export class OgmiosMempool implements Runner<MempoolRunnerDef> {
           let item = events.shift();
 
           while (!item) {
-            console.log("NO ITEM! WAITING");
             const status = await new Promise<{ returned: boolean }>(
               (resolve) => {
                 waitingResolve = resolve;

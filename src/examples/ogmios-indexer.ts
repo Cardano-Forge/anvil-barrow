@@ -110,6 +110,8 @@ async function main() {
   await controller.waitForCompletion();
 
   assert(controller.state.status === "done");
+
+  console.log("final state", controller.state);
 }
 
 main()
