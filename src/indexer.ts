@@ -54,14 +54,14 @@ export const indexerMetricDefs = {
 } satisfies Record<string, Metric>;
 export type IndexerMetrics = typeof indexerMetricDefs;
 
-export type Point =
+export type IndexerPoint =
   | {
       slot: number;
       id: string;
     }
   | string;
 
-export type Tip =
+export type IndexerTip =
   | {
       slot: number;
       id: string;
@@ -69,7 +69,7 @@ export type Tip =
     }
   | string;
 
-export type Block =
+export type IndexerBlock =
   | {
       type: "ebb";
       era: "byron";
@@ -92,11 +92,11 @@ export type Block =
       slot: number;
     };
 
-export type Schema<
-  TBlock extends Block = Block,
-  TResetPoint extends Point = Point,
-  TStartingPoint extends Point = Point,
-  TTip extends Tip = Tip,
+export type IndexerSchema<
+  TBlock extends IndexerBlock = IndexerBlock,
+  TResetPoint extends IndexerPoint = IndexerPoint,
+  TStartingPoint extends IndexerPoint = IndexerPoint,
+  TTip extends IndexerTip = IndexerTip,
 > = {
   block: TBlock;
   resetPoint: TResetPoint;
@@ -104,7 +104,7 @@ export type Schema<
   tip: TTip;
 };
 
-export type IndexerEvent<TSchema extends Schema = Schema> =
+export type IndexerEvent<TSchema extends IndexerSchema = IndexerSchema> =
   | {
       type: "apply";
       block: TSchema["block"];
@@ -120,7 +120,7 @@ export type IndexerTracingConfig = TracingConfig<IndexerMetrics>;
 
 export class IndexerControllerTracer<
   TConfig extends IndexerTracingConfig = TracingConfig,
-  TSchema extends Schema = Schema,
+  TSchema extends IndexerSchema = IndexerSchema,
   TEvent extends IndexerEvent<TSchema> = IndexerEvent<TSchema>,
 > extends ControllerTracer<TConfig, TEvent> {
   recordStarted() {
@@ -164,15 +164,16 @@ export class IndexerControllerTracer<
   }
 }
 
-export type IndexerRunnerDef<TSchema extends Schema = Schema> = RunnerDef<
-  {
-    startingPoint: TSchema["startingPoint"];
-    syncTip: TSchema["tip"] | undefined;
-    chainTip: TSchema["tip"] | undefined;
-  },
-  { point: TSchema["startingPoint"] },
-  IndexerEvent<TSchema>
->;
+export type IndexerRunnerDef<TSchema extends IndexerSchema = IndexerSchema> =
+  RunnerDef<
+    {
+      startingPoint: TSchema["startingPoint"];
+      syncTip: TSchema["tip"] | undefined;
+      chainTip: TSchema["tip"] | undefined;
+    },
+    { point: TSchema["startingPoint"] },
+    IndexerEvent<TSchema>
+  >;
 
 export abstract class IndexerRunner<TRunner extends IndexerRunnerDef>
   implements Runner<TRunner>

@@ -10,10 +10,10 @@ import {
   type IndexerEvent,
   IndexerRunner,
   type IndexerRunnerDef,
-  type Schema,
+  type IndexerSchema,
 } from "../../indexer";
 
-export type OgmiosSchema = Schema<
+export type OgmiosSchema = IndexerSchema<
   OgmiosSchemaNs.Block,
   OgmiosSchemaNs.PointOrOrigin,
   OgmiosSchemaNs.PointOrOrigin | "tip",

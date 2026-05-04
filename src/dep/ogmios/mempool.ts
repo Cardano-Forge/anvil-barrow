@@ -20,7 +20,7 @@ export type MempoolRunnerDef = RunnerDef<
 export class OgmiosMempool implements Runner<MempoolRunnerDef> {
   constructor(protected _config: ConnectionConfig) {}
 
-  createMeta(): Record<string, unknown> {
+  createMeta() {
     return {};
   }
 
