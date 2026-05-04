@@ -175,17 +175,17 @@ export type IndexerRunnerDef<TSchema extends IndexerSchema = IndexerSchema> =
     IndexerEvent<TSchema>
   >;
 
-export abstract class IndexerRunner<TRunner extends IndexerRunnerDef>
-  implements Runner<TRunner>
+export abstract class IndexerRunner<TDef extends IndexerRunnerDef>
+  implements Runner<TDef>
 {
-  createCounters(): Counters<TRunner["event"]> {
+  createCounters(): Counters<TDef["event"]> {
     return {
       applyCount: 0,
       resetCount: 0,
-    } as Counters<TRunner["event"]>;
+    } as Counters<TDef["event"]>;
   }
 
-  createMeta(opts: TRunner["opts"]): TRunner["meta"] {
+  createMeta(opts: TDef["opts"]): TDef["meta"] {
     return {
       startingPoint: opts.point,
       syncTip: undefined,
@@ -193,15 +193,12 @@ export abstract class IndexerRunner<TRunner extends IndexerRunnerDef>
     };
   }
 
-  resume(meta: TRunner["meta"]) {
+  resume(meta: TDef["meta"]) {
     const resumePoint = meta.syncTip ?? meta.startingPoint;
     return this.run({ point: resumePoint });
   }
 
-  onEventProcessed(
-    event: TRunner["event"],
-    mut: { meta: TRunner["meta"] },
-  ): void {
+  onEventProcessed(event: TDef["event"], mut: { meta: TDef["meta"] }): void {
     mut.meta.chainTip = event.tip;
     if (event.type === "apply" && event.block.type !== "ebb") {
       mut.meta.syncTip = {
@@ -213,7 +210,7 @@ export abstract class IndexerRunner<TRunner extends IndexerRunnerDef>
   }
 
   abstract run(
-    opts: TRunner["opts"],
+    opts: TDef["opts"],
     // biome-ignore lint/suspicious/noExplicitAny: Need flexible parameters
-  ): AsyncGenerator<TRunner["event"], void, any>;
+  ): AsyncGenerator<TDef["event"], void, any>;
 }

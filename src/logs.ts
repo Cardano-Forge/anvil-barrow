@@ -12,8 +12,8 @@ export const logLevels = [
 
 export type LogLevel = (typeof logLevels)[number];
 
-export function getLogLevel<TRunner extends RunnerDef>(
-  logEvent: LogEvent<TRunner>,
+export function getLogLevel<TDef extends RunnerDef>(
+  logEvent: LogEvent<TDef>,
 ): LogLevel {
   switch (logEvent.type) {
     case "event.received":

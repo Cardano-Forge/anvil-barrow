@@ -20,9 +20,9 @@ export class SocketError extends Error {
   }
 }
 
-export class ProcessingError<TRunner extends RunnerDef> extends Error {
+export class ProcessingError<TDef extends RunnerDef> extends Error {
   constructor(
-    public readonly event: TRunner["event"],
+    public readonly event: TDef["event"],
     originalError: unknown,
   ) {
     super(parseError(originalError).message, { cause: originalError });

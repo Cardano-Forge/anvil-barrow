@@ -13,17 +13,17 @@ import {
   type RunnerDef,
 } from "./types";
 
-export class Controller<TRunner extends RunnerDef> {
-  protected _state: ControllerState<TRunner> = {
+export class Controller<TDef extends RunnerDef> {
+  protected _state: ControllerState<TDef> = {
     status: "idle",
   };
 
-  protected _config: Required<ControllerConfig<TRunner>>;
-  protected _startOpts: ControllerStartOpts<TRunner>;
+  protected _config: Required<ControllerConfig<TDef>>;
+  protected _startOpts: ControllerStartOpts<TDef>;
 
   constructor(
-    config: ControllerConfig<TRunner>,
-    startOpts: Partial<ControllerStartOpts<TRunner>> = {},
+    config: ControllerConfig<TDef>,
+    startOpts: Partial<ControllerStartOpts<TDef>> = {},
   ) {
     this._config = {
       runner: config.runner,
@@ -36,13 +36,13 @@ export class Controller<TRunner extends RunnerDef> {
     this._config.tracing.recordStatus(this._state.status);
   }
 
-  get state(): ControllerState<TRunner> {
+  get state(): ControllerState<TDef> {
     return this._state;
   }
 
   async start(
-    opts: ControllerStartOpts<TRunner>,
-  ): Promise<Result<ControllerStateRunning<TRunner>>> {
+    opts: ControllerStartOpts<TDef>,
+  ): Promise<Result<ControllerStateRunning<TDef>>> {
     switch (this._state.status) {
       case "running": {
         return new Error("Controller is already running");
@@ -91,7 +91,7 @@ export class Controller<TRunner extends RunnerDef> {
     }
   }
 
-  async pause(): Promise<Result<ControllerStateStopped<TRunner>>> {
+  async pause(): Promise<Result<ControllerStateStopped<TDef>>> {
     switch (this._state.status) {
       case "running": {
         try {
@@ -123,7 +123,7 @@ export class Controller<TRunner extends RunnerDef> {
     }
   }
 
-  async resume(): Promise<Result<ControllerStateRunning<TRunner>>> {
+  async resume(): Promise<Result<ControllerStateRunning<TDef>>> {
     switch (this._state.status) {
       case "paused": {
         this._state = {
@@ -156,18 +156,18 @@ export class Controller<TRunner extends RunnerDef> {
     }
   }
 
-  private _emitLogEvent(logEvent: Omit<LogEvent<TRunner>, "timestamp">): void {
+  private _emitLogEvent(logEvent: Omit<LogEvent<TDef>, "timestamp">): void {
     try {
       this._config.logger({
         ...logEvent,
         timestamp: Date.now(),
-      } as LogEvent<TRunner>);
+      } as LogEvent<TDef>);
     } catch {
       // Silently ignore event handler errors to prevent disrupting controller flow
     }
   }
 
-  private async _runLoop(opts: ControllerStartOpts<TRunner>): Promise<void> {
+  private async _runLoop(opts: ControllerStartOpts<TDef>): Promise<void> {
     assert(this._state.status === "running");
 
     try {
@@ -228,7 +228,7 @@ export class Controller<TRunner extends RunnerDef> {
 
             const processingTime = Date.now() - processingStart;
 
-            const counters = this._state.counters as Counters<TRunner["event"]>;
+            const counters = this._state.counters as Counters<TDef["event"]>;
             const counterKey = getEventCounterKey(event);
             if (typeof counters?.[counterKey] === "number") {
               (counters[counterKey] as number) += 1;
@@ -362,12 +362,12 @@ export class Controller<TRunner extends RunnerDef> {
   }
 }
 
-export type LogEvent<TRunner extends RunnerDef> =
+export type LogEvent<TDef extends RunnerDef> =
   | {
       type: "controller.started";
       timestamp: number;
       data: {
-        meta: ControllerStateMeta<TRunner>;
+        meta: ControllerStateMeta<TDef>;
       };
     }
   | {
@@ -375,16 +375,16 @@ export type LogEvent<TRunner extends RunnerDef> =
       timestamp: number;
       data: {
         reason: "user_requested" | "error_limit";
-        counters: ControllerStateCounters<TRunner>;
-        meta: ControllerStateMeta<TRunner>;
+        counters: ControllerStateCounters<TDef>;
+        meta: ControllerStateMeta<TDef>;
       };
     }
   | {
       type: "controller.resumed";
       timestamp: number;
       data: {
-        counters: ControllerStateCounters<TRunner>;
-        meta: ControllerStateMeta<TRunner>;
+        counters: ControllerStateCounters<TDef>;
+        meta: ControllerStateMeta<TDef>;
       };
     }
   | {
@@ -392,22 +392,22 @@ export type LogEvent<TRunner extends RunnerDef> =
       timestamp: number;
       data: {
         status: "done" | "crashed";
-        counters: ControllerStateCounters<TRunner>;
-        meta: ControllerStateMeta<TRunner>;
+        counters: ControllerStateCounters<TDef>;
+        meta: ControllerStateMeta<TDef>;
       };
     }
   | {
       type: "event.received" | "event.filtered" | "event.processing";
       timestamp: number;
       data: {
-        event: TRunner["event"]["type"];
+        event: TDef["event"]["type"];
       };
     }
   | {
       type: "event.processed";
       timestamp: number;
       data: {
-        event: TRunner["event"]["type"];
+        event: TDef["event"]["type"];
         result?: { done: boolean } | undefined;
         processingTime: number;
       };
@@ -425,7 +425,7 @@ export type LogEvent<TRunner extends RunnerDef> =
       timestamp: number;
       data: {
         error: Error;
-        event?: TRunner["event"]["type"];
+        event?: TDef["event"]["type"];
         context: "processing" | "sync_loop" | "generator";
       };
     }
@@ -455,47 +455,47 @@ export type LogEvent<TRunner extends RunnerDef> =
       };
     };
 
-export type ControllerConfig<TRunner extends RunnerDef> = {
-  runner: Runner<TRunner>;
+export type ControllerConfig<TDef extends RunnerDef> = {
+  runner: Runner<TDef>;
   errorHandler?: ErrorHandler;
-  logger?: (logEvent: LogEvent<TRunner>) => void;
+  logger?: (logEvent: LogEvent<TDef>) => void;
   tracing?: ControllerTracer;
 };
 
-export type ControllerStartOpts<TRunner extends RunnerDef> = TRunner["opts"] & {
+export type ControllerStartOpts<TDef extends RunnerDef> = TDef["opts"] & {
   /** Function that handles events */
-  fn?: (event: TRunner["event"]) => MaybePromise<{ done: boolean } | void>;
+  fn?: (event: TDef["event"]) => MaybePromise<{ done: boolean } | void>;
   /** Throttle duration for events */
   throttle?: [number, Unit];
   /** Function to filter events */
-  filter?: (event: TRunner["event"]) => MaybePromise<boolean>;
+  filter?: (event: TDef["event"]) => MaybePromise<boolean>;
   /** Function that returns true to stop running */
   takeUntil?: (data: {
-    lastEvent: TRunner["event"] & {
+    lastEvent: TDef["event"] & {
       /**
        * Whether the event was filtered out by the filter function
        */
       isFilteredOut: boolean;
     };
-    state: ControllerStateRunning<TRunner>;
+    state: ControllerStateRunning<TDef>;
   }) => MaybePromise<boolean>;
 };
 
-export type ControllerStateCounters<TRunner extends RunnerDef> = Counters<
-  TRunner["event"]
+export type ControllerStateCounters<TDef extends RunnerDef> = Counters<
+  TDef["event"]
 > & {
   filterCount: number;
   errorCount: number;
 };
 
-export type ControllerStateMeta<TRunner extends RunnerDef> = TRunner["meta"] & {
-  startOpts: ControllerStartOpts<TRunner>;
+export type ControllerStateMeta<TDef extends RunnerDef> = TDef["meta"] & {
+  startOpts: ControllerStartOpts<TDef>;
   lastError: Error | undefined;
 };
 
-export type ControllerStateBase<TRunner extends RunnerDef> = {
-  counters: ControllerStateCounters<TRunner>;
-  meta: ControllerStateMeta<TRunner>;
+export type ControllerStateBase<TDef extends RunnerDef> = {
+  counters: ControllerStateCounters<TDef>;
+  meta: ControllerStateMeta<TDef>;
 };
 
 export const controllerStatuses = [
@@ -511,21 +511,21 @@ export type ControllerStateIdle = {
   status: "idle";
 };
 
-export type ControllerStateRunning<TRunner extends RunnerDef> = {
+export type ControllerStateRunning<TDef extends RunnerDef> = {
   status: "running";
-  generator: AsyncGenerator<TRunner["event"], void>;
+  generator: AsyncGenerator<TDef["event"], void>;
   promise: Promise<void>;
-} & ControllerStateBase<TRunner>;
+} & ControllerStateBase<TDef>;
 
-export type ControllerStateStopped<TRunner extends RunnerDef> = {
+export type ControllerStateStopped<TDef extends RunnerDef> = {
   status: "paused" | "done" | "crashed";
   stoppedAt: number;
-} & ControllerStateBase<TRunner>;
+} & ControllerStateBase<TDef>;
 
-export type ControllerState<TRunner extends RunnerDef> =
+export type ControllerState<TDef extends RunnerDef> =
   | ControllerStateIdle
-  | ControllerStateRunning<TRunner>
-  | ControllerStateStopped<TRunner>;
+  | ControllerStateRunning<TDef>
+  | ControllerStateStopped<TDef>;
 
 export class ControllerTracer<
   TConfig extends TracingConfig = TracingConfig,
