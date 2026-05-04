@@ -22,7 +22,7 @@ export class Controller<TRunner extends RunnerDef> {
 
   constructor(
     config: ControllerConfig<TRunner>,
-    startOpts: ControllerStartOpts<TRunner> = {},
+    startOpts: Partial<ControllerStartOpts<TRunner>> = {},
   ) {
     this._config = {
       runner: config.runner,
