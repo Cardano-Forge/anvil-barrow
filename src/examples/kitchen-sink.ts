@@ -4,15 +4,16 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { type Level, pino } from "pino";
 import { assert, unwrap } from "trynot";
 import { Controller } from "../controller";
-import {
-  OgmiosIndexer,
-  type OgmiosRunner,
-  type OgmiosSchema,
-} from "../dep/ogmios";
+import { OgmiosIndexer, type OgmiosSchema } from "../dep/ogmios";
 import { otelTracingConfig } from "../dep/otel";
 import { pinoLogger } from "../dep/pino";
 import { ErrorHandler } from "../error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "../errors";
+import {
+  IndexerControllerTracer,
+  type IndexerRunnerDef,
+  indexerMetricDefs,
+} from "../indexer";
 
 // Setup ogmios sync client
 const runner = new OgmiosIndexer({
@@ -27,11 +28,13 @@ new NodeSDK({
     exporter: new OTLPMetricExporter(),
   }),
 }).start();
-const tracing = otelTracingConfig();
+const tracing = new IndexerControllerTracer(
+  otelTracingConfig({ metrics: indexerMetricDefs }),
+);
 
 // Setup pino logger
 const level: Level = "trace";
-const logger = pinoLogger<OgmiosSchema>(
+const logger = pinoLogger<IndexerRunnerDef<OgmiosSchema>>(
   pino({
     level,
     transport: {
@@ -65,7 +68,7 @@ const errorHandler = new ErrorHandler()
     ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, backoff: true }),
   );
 
-const controller = new Controller<OgmiosRunner>({
+const controller = new Controller<IndexerRunnerDef<OgmiosSchema>>({
   runner,
   errorHandler,
   logger,

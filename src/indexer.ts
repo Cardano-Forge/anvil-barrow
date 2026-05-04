@@ -1,5 +1,5 @@
 import { ControllerTracer } from "./controller";
-import type { Metric, Metrics, TracingConfig } from "./tracing";
+import { type Metric, metricDefs, type TracingConfig } from "./tracing";
 import {
   type Counters,
   getEventCounterKey,
@@ -8,6 +8,7 @@ import {
 } from "./types";
 
 export const indexerMetricDefs = {
+  ...metricDefs,
   syncTipSlot: {
     type: "gauge",
     name: "sync_tip_slot",
@@ -115,7 +116,7 @@ export type IndexerEvent<TSchema extends Schema = Schema> =
       tip: TSchema["tip"];
     };
 
-export type IndexerTracingConfig = TracingConfig<Metrics & IndexerMetrics>;
+export type IndexerTracingConfig = TracingConfig<IndexerMetrics>;
 
 export class IndexerControllerTracer<
   TConfig extends IndexerTracingConfig = TracingConfig,
