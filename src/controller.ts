@@ -1,5 +1,6 @@
 import { assert, parseError, type Result, wrap } from "trynot";
 import { ErrorHandler, type HandlerResult } from "./error-handler";
+import { ProcessingError } from "./errors";
 import { noop } from "./lib/noop";
 import { toMilliseconds, type Unit } from "./time";
 import type { TracingConfig } from "./tracing";
@@ -258,9 +259,7 @@ export class Controller<TRunner extends RunnerDef> {
 
           await applyThrottle();
         } catch (error) {
-          throw parseError(error);
-          // TODO ProcessingError shouldn't be indexer specific
-          // throw ProcessingError.fromSyncEvent(event, error);
+          throw new ProcessingError(event, error);
         }
       }
 

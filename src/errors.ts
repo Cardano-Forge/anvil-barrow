@@ -1,5 +1,5 @@
 import { parseError } from "trynot";
-import type { Schema, SyncEvent } from "./types";
+import type { RunnerDef } from "./types";
 
 export class SocketClosedError extends Error {
   constructor(
@@ -20,44 +20,12 @@ export class SocketError extends Error {
   }
 }
 
-type ProcessingErrorEvent<TSchema extends Schema> =
-  | {
-      type: "apply";
-      block: Pick<TSchema["block"], "type" | "id" | "slot" | "height">;
-    }
-  | { type: "reset"; point: TSchema["resetPoint"] };
-
-export class ProcessingError<TSchema extends Schema> extends Error {
+export class ProcessingError<TRunner extends RunnerDef> extends Error {
   constructor(
-    public readonly event: ProcessingErrorEvent<TSchema>,
-    message: string,
-    opts?: ErrorOptions,
-  ) {
-    super(message, opts);
-    this.name = "ProcessingError";
-  }
-
-  static fromSyncEvent<TSchema extends Schema>(
-    event: SyncEvent<TSchema>,
+    public readonly event: TRunner["event"],
     originalError: unknown,
-  ): ProcessingError<TSchema> {
-    return new ProcessingError(
-      event.type === "apply"
-        ? {
-            type: "apply",
-            block: {
-              type: event.block.type,
-              id: event.block.id,
-              slot: event.block.slot,
-              height: event.block.height,
-            },
-          }
-        : {
-            type: "reset",
-            point: event.point,
-          },
-      parseError(originalError).message,
-      { cause: originalError },
-    );
+  ) {
+    super(parseError(originalError).message, { cause: originalError });
+    this.name = "ProcessingError";
   }
 }
