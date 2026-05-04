@@ -119,10 +119,9 @@ export type IndexerEvent<TSchema extends IndexerSchema = IndexerSchema> =
 export type IndexerTracingConfig = TracingConfig<IndexerMetrics>;
 
 export class IndexerControllerTracer<
-  TConfig extends IndexerTracingConfig = TracingConfig,
   TSchema extends IndexerSchema = IndexerSchema,
   TEvent extends IndexerEvent<TSchema> = IndexerEvent<TSchema>,
-> extends ControllerTracer<TConfig, TEvent> {
+> extends ControllerTracer<TracingConfig<IndexerMetrics>, TEvent> {
   recordStarted() {
     super.recordStarted();
     this.config?.metrics?.isSynced?.record(0);

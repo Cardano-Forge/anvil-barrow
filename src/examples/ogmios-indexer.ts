@@ -5,15 +5,11 @@ import { type Level, pino } from "pino";
 import { assert, unwrap } from "trynot";
 import { Controller } from "../controller";
 import { OgmiosIndexer, type OgmiosSchema } from "../dep/ogmios";
-import { otelTracingConfig } from "../dep/otel";
+import { OtelIndexerTracer } from "../dep/otel";
 import { pinoLogger } from "../dep/pino";
 import { ErrorHandler } from "../error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "../errors";
-import {
-  IndexerControllerTracer,
-  type IndexerRunnerDef,
-  indexerMetricDefs,
-} from "../indexer";
+import type { IndexerRunnerDef } from "../indexer";
 
 // Setup ogmios sync client
 const runner = new OgmiosIndexer({
@@ -28,9 +24,7 @@ new NodeSDK({
     exporter: new OTLPMetricExporter(),
   }),
 }).start();
-const tracing = new IndexerControllerTracer(
-  otelTracingConfig({ metrics: indexerMetricDefs }),
-);
+const tracing = new OtelIndexerTracer();
 
 // Setup pino logger
 const level: Level = "trace";

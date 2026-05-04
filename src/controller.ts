@@ -257,7 +257,7 @@ export class Controller<TDef extends RunnerDef> {
           if (
             processingResult?.done ||
             (await opts.takeUntil?.({
-              lastEvent: { ...event, isFilteredOut },
+              event: { ...event, isFilteredOut },
               state: this._state,
             }))
           ) {
@@ -471,7 +471,7 @@ export type ControllerStartOpts<TDef extends RunnerDef> = TDef["opts"] & {
   filter?: (event: TDef["event"]) => MaybePromise<boolean>;
   /** Function that returns true to stop running */
   takeUntil?: (data: {
-    lastEvent: TDef["event"] & {
+    event: TDef["event"] & {
       /**
        * Whether the event was filtered out by the filter function
        */

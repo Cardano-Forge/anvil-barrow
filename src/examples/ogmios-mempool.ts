@@ -3,9 +3,9 @@ import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { type Level, pino } from "pino";
 import { assert, unwrap } from "trynot";
-import { Controller, ControllerTracer } from "../controller";
+import { Controller } from "../controller";
 import { type MempoolRunnerDef, OgmiosMempool } from "../dep/ogmios";
-import { otelTracingConfig } from "../dep/otel";
+import { OtelTracer } from "../dep/otel";
 import { pinoLogger } from "../dep/pino";
 import { ErrorHandler } from "../error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "../errors";
@@ -23,7 +23,7 @@ new NodeSDK({
     exporter: new OTLPMetricExporter(),
   }),
 }).start();
-const tracing = new ControllerTracer(otelTracingConfig());
+const tracing = new OtelTracer();
 
 // Setup pino logger
 const level: Level = "trace";
