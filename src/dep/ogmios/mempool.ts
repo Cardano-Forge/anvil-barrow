@@ -11,13 +11,17 @@ type MempoolEvent = { type: "txs"; txs: string[] };
 
 type Event = { event: MempoolEvent } | Error;
 
-export class OgmiosMempoool
-  implements Runner<RunnerDef<void, void, MempoolEvent>>
-{
+export type MempoolRunnerDef = RunnerDef<
+  Record<string, unknown>,
+  Record<string, unknown>,
+  MempoolEvent
+>;
+
+export class OgmiosMempool implements Runner<MempoolRunnerDef> {
   constructor(protected _config: ConnectionConfig) {}
 
-  createMeta(): void {
-    return;
+  createMeta(): Record<string, unknown> {
+    return {};
   }
 
   createCounters(): Counters<MempoolEvent> {

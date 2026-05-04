@@ -4,12 +4,13 @@ import { ProcessingError } from "./errors";
 import { noop } from "./lib/noop";
 import { toMilliseconds, type Unit } from "./time";
 import type { TracingConfig } from "./tracing";
-import type {
-  AnyEvent,
-  Counters,
-  MaybePromise,
-  Runner,
-  RunnerDef,
+import {
+  type AnyEvent,
+  type Counters,
+  getEventCounterKey,
+  type MaybePromise,
+  type Runner,
+  type RunnerDef,
 } from "./types";
 
 export class Controller<TRunner extends RunnerDef> {
@@ -225,6 +226,12 @@ export class Controller<TRunner extends RunnerDef> {
             processingResult = (await opts.fn?.(event)) ?? undefined;
 
             const processingTime = Date.now() - processingStart;
+
+            const counters = this._state.counters as Counters<TRunner["event"]>;
+            const counterKey = getEventCounterKey(event);
+            if (typeof counters?.[counterKey] === "number") {
+              (counters[counterKey] as number) += 1;
+            }
 
             this._config.runner.onEventProcessed?.(event, this._state);
             this._config.tracing.recordEventProcessed(

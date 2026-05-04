@@ -653,7 +653,7 @@ describe("Controller", () => {
       })();
       mockRunner.run = vi.fn(() => mockGenerator);
 
-      const controller = new Controller({ runner: mockRunner });
+      const controller = new Controller({ runner: mockRunner, debug: true });
       await controller.start({ point: "tip", fn: async () => {} });
       await controller.waitForCompletion();
 

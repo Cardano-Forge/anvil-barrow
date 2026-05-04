@@ -209,9 +209,6 @@ export abstract class IndexerRunner<TRunner extends IndexerRunnerDef>
         height: event.block.height,
       };
     }
-    const counters = mut.counters as Counters<IndexerEvent>;
-    const counterKey = `${event.type}Count` as const;
-    counters[counterKey] += 1;
   }
 
   abstract run(
