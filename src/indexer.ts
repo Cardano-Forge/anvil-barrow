@@ -31,6 +31,18 @@ export const indexerMetricDefs = {
     description: "Is synced (1 = yes, 0 = no)",
     valueType: "int",
   },
+  applyCount: {
+    type: "gauge",
+    name: "apply_count",
+    description: "Number of apply events",
+    valueType: "int",
+  },
+  resetCount: {
+    type: "gauge",
+    name: "reset_count",
+    description: "Number of reset events",
+    valueType: "int",
+  },
 } satisfies Record<string, Metric>;
 export type IndexerMetrics = typeof indexerMetricDefs;
 

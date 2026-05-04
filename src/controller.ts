@@ -21,14 +21,11 @@ export class Controller<TRunner extends RunnerDef> {
       runner: config.runner,
       errorHandler: config.errorHandler ?? new ErrorHandler(),
       logger: config.logger ?? noop,
-      tracing: config.tracing ?? {},
+      tracing: config.tracing ?? new ControllerTracer(),
     };
 
     this._startOpts = startOpts;
-
-    this._config.tracing.metrics?.status?.record(
-      controllerStatuses.indexOf(this._state.status),
-    );
+    this._config.tracing.recordStatus(this._state.status);
   }
 
   get state(): ControllerState<TRunner> {
@@ -61,20 +58,8 @@ export class Controller<TRunner extends RunnerDef> {
       },
     };
 
-    // TODO These are indexer specific
-    this._config.tracing.metrics?.isSynced?.record(0);
-    this._config.tracing.metrics?.syncTipSlot?.record(0);
-    this._config.tracing.metrics?.syncTipHeight?.record(0);
-    this._config.tracing.metrics?.chainTipSlot?.record(0);
-    this._config.tracing.metrics?.chainTipHeight?.record(0);
-    this._config.tracing.metrics?.applyCount?.record(0);
-    this._config.tracing.metrics?.resetCount?.record(0);
-
-    this._config.tracing.metrics?.status?.record(
-      controllerStatuses.indexOf(this._state.status),
-    );
-    this._config.tracing.metrics?.filterCount?.record(0);
-    this._config.tracing.metrics?.errorCount?.record(0);
+    this._config.tracing.recordStatus(this._state.status);
+    this._config.tracing.recordStarted();
 
     this._emitLogEvent({
       type: "controller.started",
@@ -140,9 +125,7 @@ export class Controller<TRunner extends RunnerDef> {
           counters: this._state.counters,
         };
 
-        this._config.tracing.metrics?.status?.record(
-          controllerStatuses.indexOf(this._state.status),
-        );
+        this._config.tracing.recordStatus(this._state.status);
 
         this._emitLogEvent({
           type: "controller.resumed",
@@ -200,9 +183,7 @@ export class Controller<TRunner extends RunnerDef> {
       for await (const event of this._state.generator) {
         const arrivalTime = Date.now();
         if (typeof lastArrivalTime === "number") {
-          this._config.tracing.metrics?.arrivalTime?.record(
-            arrivalTime - lastArrivalTime,
-          );
+          this._config.tracing.recordArrivalTime(arrivalTime - lastArrivalTime);
         }
         lastArrivalTime = arrivalTime;
 
@@ -218,7 +199,8 @@ export class Controller<TRunner extends RunnerDef> {
           if (opts.filter && !(await opts.filter(event))) {
             isFilteredOut = true;
             this._state.counters.filterCount += 1;
-            this._config.tracing.metrics?.filterCount?.record(
+            this._config.tracing.recordEventFiltered(
+              event,
               this._state.counters.filterCount,
             );
             this._emitLogEvent({
@@ -237,9 +219,7 @@ export class Controller<TRunner extends RunnerDef> {
 
             const processingTime = Date.now() - processingStart;
 
-            this._config.tracing.metrics?.processingTime?.record(
-              processingTime,
-            );
+            this._config.tracing.recordEventProcessed(event, processingTime);
 
             this._emitLogEvent({
               type: "event.processed",
@@ -250,50 +230,8 @@ export class Controller<TRunner extends RunnerDef> {
               },
             });
 
-            // TODO these counter updates are all indexer specific
-            // this._state.meta.chainTip = event.tip;
-            // if (typeof event.tip === "object") {
-            //   this._config.tracing.metrics?.chainTipSlot?.record(
-            //     event.tip.slot,
-            //   );
-            //   this._config.tracing.metrics?.chainTipHeight?.record(
-            //     event.tip.height,
-            //   );
-            // }
-            // if (event.type === "apply" && event.block.type !== "ebb") {
-            //   this._state.meta.syncTip = {
-            //     slot: event.block.slot,
-            //     id: event.block.id,
-            //     height: event.block.height,
-            //   };
-            //   this._config.tracing.metrics?.syncTipSlot?.record(
-            //     event.block.slot,
-            //   );
-            //   this._config.tracing.metrics?.syncTipHeight?.record(
-            //     event.block.height,
-            //   );
-            // }
-            // if (
-            //   event.type === "apply" &&
-            //   event.block.type !== "ebb" &&
-            //   typeof event.tip !== "string" &&
-            //   event.block.height === event.tip.height
-            // ) {
-            //   this._config.tracing.metrics?.isSynced?.record(1);
-            // } else {
-            //   this._config.tracing.metrics?.isSynced?.record(0);
-            // }
-
-            const eventCounter =
-              `${event.type}Count` as keyof typeof this._state.counters;
-            (this._state.counters[eventCounter] as number) += 1;
-            // TODO make tracing counters generic based on runner type
-            // this._config.tracing.metrics?.[eventCounter]?.record(
-            //   this._state.counters[eventCounter],
-            // );
-
             this._config.errorHandler.reset();
-            this._config.tracing.metrics?.errorCount?.record(0);
+            this._config.tracing.recordErrorCount(0);
           }
 
           if (
@@ -324,9 +262,8 @@ export class Controller<TRunner extends RunnerDef> {
         meta: this._state.meta,
         counters: this._state.counters,
       };
-      this._config.tracing.metrics?.status?.record(
-        controllerStatuses.indexOf(this._state.status),
-      );
+
+      this._config.tracing.recordStatus(status);
 
       if (status === "done") {
         this._emitLogEvent({
@@ -341,9 +278,7 @@ export class Controller<TRunner extends RunnerDef> {
     } catch (error) {
       const parsedError = parseError(error);
       this._state.counters.errorCount += 1;
-      this._config.tracing.metrics?.errorCount?.record(
-        this._state.counters.errorCount,
-      );
+      this._config.tracing.recordErrorCount(this._state.counters.errorCount);
       this._state.meta.lastError = parsedError;
 
       this._emitLogEvent({
@@ -394,9 +329,8 @@ export class Controller<TRunner extends RunnerDef> {
         meta: this._state.meta,
         counters: this._state.counters,
       };
-      this._config.tracing.metrics?.status?.record(
-        controllerStatuses.indexOf(this._state.status),
-      );
+
+      this._config.tracing.recordStatus(this._state.status);
 
       this._emitLogEvent({
         type: "controller.completed",
@@ -507,7 +441,7 @@ export type ControllerConfig<TRunner extends RunnerDef> = {
   runner: Runner<TRunner>;
   errorHandler?: ErrorHandler;
   logger?: (logEvent: LogEvent<TRunner>) => void;
-  tracing?: TracingConfig;
+  tracing?: ControllerTracer;
 };
 
 export type ControllerStartOpts<TRunner extends RunnerDef> = TRunner["opts"] & {
@@ -575,3 +509,89 @@ export type ControllerState<TRunner extends RunnerDef> =
   | ControllerStateIdle
   | ControllerStateRunning<TRunner>
   | ControllerStateStopped<TRunner>;
+
+export class ControllerTracer<
+  Config extends TracingConfig = TracingConfig,
+  TEvent = any,
+> {
+  constructor(public readonly config?: Config) {}
+
+  recordStatus(status: ControllerStatus) {
+    this.config?.metrics?.status?.record(controllerStatuses.indexOf(status));
+  }
+
+  recordErrorCount(count: number) {
+    this.config?.metrics?.errorCount?.record(count);
+  }
+
+  recordStarted() {
+    this.config?.metrics?.filterCount?.record(0);
+    this.config?.metrics?.errorCount?.record(0);
+
+    // // TODO These are indexer specific
+    // this.config?.metrics?.isSynced?.record(0);
+    // this.config?.metrics?.syncTipSlot?.record(0);
+    // this.config?.metrics?.syncTipHeight?.record(0);
+    // this.config?.metrics?.chainTipSlot?.record(0);
+    // this.config?.metrics?.chainTipHeight?.record(0);
+    // this.config?.metrics?.applyCount?.record(0);
+    // this.config?.metrics?.resetCount?.record(0);
+  }
+
+  recordCrashed() {
+    this.recordStatus("crashed");
+  }
+
+  recordArrivalTime(time: number) {
+    this.config?.metrics?.arrivalTime?.record(time);
+  }
+
+  recordEventFiltered(_event: TEvent, filterCount: number) {
+    this.config?.metrics?.filterCount?.record(filterCount);
+  }
+
+  recordEventProcessed(_event: TEvent, processingTime: number) {
+    this.config?.metrics?.processingTime?.record(processingTime);
+
+    // TODO these counter updates are all indexer specific
+    // this._state.meta.chainTip = event.tip;
+    // if (typeof event.tip === "object") {
+    //   this._config.tracing.metrics?.chainTipSlot?.record(
+    //     event.tip.slot,
+    //   );
+    //   this._config.tracing.metrics?.chainTipHeight?.record(
+    //     event.tip.height,
+    //   );
+    // }
+    // if (event.type === "apply" && event.block.type !== "ebb") {
+    //   this._state.meta.syncTip = {
+    //     slot: event.block.slot,
+    //     id: event.block.id,
+    //     height: event.block.height,
+    //   };
+    //   this._config.tracing.metrics?.syncTipSlot?.record(
+    //     event.block.slot,
+    //   );
+    //   this._config.tracing.metrics?.syncTipHeight?.record(
+    //     event.block.height,
+    //   );
+    // }
+    // if (
+    //   event.type === "apply" &&
+    //   event.block.type !== "ebb" &&
+    //   typeof event.tip !== "string" &&
+    //   event.block.height === event.tip.height
+    // ) {
+    //   this._config.tracing.metrics?.isSynced?.record(1);
+    // } else {
+    //   this._config.tracing.metrics?.isSynced?.record(0);
+    // }
+    // const eventCounter =
+    //   `${event.type}Count` as keyof typeof this._state.counters;
+    // (this._state.counters[eventCounter] as number) += 1;
+    // TODO make tracing counters generic based on runner type
+    // this._config.tracing.metrics?.[eventCounter]?.record(
+    //   this._state.counters[eventCounter],
+    // );
+  }
+}
