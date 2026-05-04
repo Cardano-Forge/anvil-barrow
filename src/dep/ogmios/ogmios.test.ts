@@ -5,8 +5,8 @@ import type {
 } from "@cardano-ogmios/client";
 import type { ChainSynchronizationClient } from "@cardano-ogmios/client/dist/ChainSynchronization";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
-import { SocketError } from "../errors";
-import { OgmiosIndexer } from "./ogmios";
+import { SocketError } from "../../errors";
+import { OgmiosIndexer } from "./indexer";
 
 vi.mock("@cardano-ogmios/client", () => ({
   createInteractionContext: vi.fn(),

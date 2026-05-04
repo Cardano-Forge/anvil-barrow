@@ -4,22 +4,31 @@ import {
   createMempoolMonitoringClient,
 } from "@cardano-ogmios/client";
 import { isErr, parseError, wrap } from "trynot";
-import { SocketClosedError, SocketError } from "../errors";
-import type { Schema, SyncClient, SyncEvent } from "../types";
+import { SocketClosedError, SocketError } from "../../errors";
+import type { Counters, Runner, RunnerDef } from "../../types";
 
-export type MempoolSchema = Schema<
-  { type: "ebb"; era: "byron"; id: string; height: number },
-  string,
-  string,
-  string
->;
+type MempoolEvent = { type: "txs"; txs: string[] };
 
-type Event = { event: SyncEvent<MempoolSchema> } | Error;
+type Event = { event: MempoolEvent } | Error;
 
-export class MempoolSyncClient implements SyncClient<MempoolSchema> {
+export class OgmiosMempoool
+  implements Runner<RunnerDef<void, void, MempoolEvent>>
+{
   constructor(protected _config: ConnectionConfig) {}
 
-  sync() {
+  createMeta(): void {
+    return;
+  }
+
+  createCounters(): Counters<MempoolEvent> {
+    return { txsCount: 0 };
+  }
+
+  resume() {
+    return this.run();
+  }
+
+  run() {
     const events: Array<Event> = [];
     let waitingResolve: ((status: { returned: boolean }) => void) | null = null;
 
@@ -31,7 +40,7 @@ export class MempoolSyncClient implements SyncClient<MempoolSchema> {
       }
     };
 
-    async function* _sync(config: ConnectionConfig) {
+    async function* _run(config: ConnectionConfig) {
       const context = await wrap(
         createInteractionContext(
           (error) => push(new Error(`ogmios error: ${error.message}`)),
@@ -62,13 +71,7 @@ export class MempoolSyncClient implements SyncClient<MempoolSchema> {
                 txs.push(txHash);
                 txHash = await client.nextTransaction();
               }
-              push({
-                event: {
-                  type: "reset",
-                  point: txs.length.toString(),
-                  tip: JSON.stringify(txs),
-                },
-              });
+              push({ event: { type: "txs", txs } });
               console.log("done");
             })
             .catch((error) => {
@@ -112,7 +115,7 @@ export class MempoolSyncClient implements SyncClient<MempoolSchema> {
       }
     }
 
-    const generator = _sync(this._config);
+    const generator = _run(this._config);
 
     // Stop running generator when generator is manually stopped
     const generatorReturn = generator.return;
