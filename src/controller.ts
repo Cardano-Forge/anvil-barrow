@@ -56,6 +56,7 @@ export class Controller<TRunner extends RunnerDef> {
       generator: this._config.runner.run(startOpts),
       promise: Promise.resolve(),
       meta: {
+        startOpts,
         lastError: undefined,
         ...this._config.runner.createMeta(startOpts),
       },
@@ -462,15 +463,13 @@ export type ControllerConfig<TRunner extends RunnerDef> = {
 };
 
 export type ControllerStartOpts<TRunner extends RunnerDef> = TRunner["opts"] & {
-  /** Function that handles sync events */
-  fn?: (
-    event: TRunner["event"],
-  ) => MaybePromise<{ done: boolean } | undefined | void>;
-  /** Throttle duration for sync events */
+  /** Function that handles events */
+  fn?: (event: TRunner["event"]) => MaybePromise<{ done: boolean } | void>;
+  /** Throttle duration for events */
   throttle?: [number, Unit];
-  /** Function to filter sync events */
+  /** Function to filter events */
   filter?: (event: TRunner["event"]) => MaybePromise<boolean>;
-  /** Function that returns true to stop syncing */
+  /** Function that returns true to stop running */
   takeUntil?: (data: {
     lastEvent: TRunner["event"] & {
       /**
@@ -490,6 +489,7 @@ export type ControllerStateCounters<TRunner extends RunnerDef> = Counters<
 };
 
 export type ControllerStateMeta<TRunner extends RunnerDef> = TRunner["meta"] & {
+  startOpts: ControllerStartOpts<TRunner>;
   lastError: Error | undefined;
 };
 

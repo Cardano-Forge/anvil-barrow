@@ -167,7 +167,7 @@ export type HandlerResult = {
 
 export type ErrorHandlerFn = (
   error: unknown,
-) => MaybePromise<HandlerResult | undefined | void>;
+) => MaybePromise<HandlerResult | void>;
 
 export type RetryOptions = {
   /** Maximum number of retries (default: 3) */

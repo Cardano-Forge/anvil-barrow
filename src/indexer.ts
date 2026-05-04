@@ -200,7 +200,7 @@ export abstract class IndexerRunner<TRunner extends IndexerRunnerDef>
 
   onEventProcessed(
     event: TRunner["event"],
-    mut: { meta: TRunner["meta"]; counters: Counters<TRunner["event"]> },
+    mut: { meta: TRunner["meta"] },
   ): void {
     mut.meta.chainTip = event.tip;
     if (event.type === "apply" && event.block.type !== "ebb") {
