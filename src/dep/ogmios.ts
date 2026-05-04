@@ -6,8 +6,12 @@ import {
 } from "@cardano-ogmios/client";
 import { isErr, parseError, wrap } from "trynot";
 import { SocketClosedError, SocketError } from "../errors";
-import type { IndexerEvent, Schema } from "../indexer";
-import type { Counters, Runner, RunnerDef } from "../types";
+import {
+  type IndexerEvent,
+  IndexerRunner,
+  type IndexerRunnerDef,
+  type Schema,
+} from "../indexer";
 
 export type OgmiosSchema = Schema<
   OgmiosSchemaNs.Block,
@@ -20,40 +24,14 @@ type Event =
   | { event: IndexerEvent<OgmiosSchema>; requestNext: () => void }
   | Error;
 
-export type OgmiosRunner = RunnerDef<
-  {
-    startingPoint: OgmiosSchema["startingPoint"];
-    syncTip: OgmiosSchema["tip"] | undefined;
-    chainTip: OgmiosSchema["tip"] | undefined;
-  },
-  { point: OgmiosSchema["startingPoint"] },
-  IndexerEvent<OgmiosSchema>
->;
-
-export class OgmiosIndexer implements Runner<OgmiosRunner> {
-  constructor(private _config: ConnectionConfig) {}
-
-  createCounters(): Counters<IndexerEvent<OgmiosSchema>> {
-    return {
-      applyCount: 0,
-      resetCount: 0,
-    };
+export class OgmiosIndexer extends IndexerRunner<
+  IndexerRunnerDef<OgmiosSchema>
+> {
+  constructor(private _config: ConnectionConfig) {
+    super();
   }
 
-  createMeta(opts: OgmiosRunner["opts"]): OgmiosRunner["meta"] {
-    return {
-      startingPoint: opts.point,
-      syncTip: undefined,
-      chainTip: undefined,
-    };
-  }
-
-  resume(meta: OgmiosRunner["meta"]) {
-    const resumePoint = meta.syncTip ?? meta.startingPoint;
-    return this.run({ point: resumePoint });
-  }
-
-  run(opts: OgmiosRunner["opts"]) {
+  run(opts: IndexerRunnerDef<OgmiosSchema>["opts"]) {
     const events: Array<Event> = [];
     let waitingResolve: ((status: { returned: boolean }) => void) | null = null;
 

@@ -1,4 +1,4 @@
-import { ControllerStatus, controllerStatuses } from "./controller";
+import { controllerStatuses } from "./controller";
 
 export type MetricTypes = {
   gauge: { record: (value: number) => void };
