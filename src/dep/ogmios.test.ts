@@ -6,7 +6,7 @@ import type {
 import type { ChainSynchronizationClient } from "@cardano-ogmios/client/dist/ChainSynchronization";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { SocketError } from "../errors";
-import { OgmiosSyncClient } from "./ogmios";
+import { OgmiosIndexer } from "./ogmios";
 
 vi.mock("@cardano-ogmios/client", () => ({
   createInteractionContext: vi.fn(),
@@ -18,7 +18,7 @@ import {
   createInteractionContext,
 } from "@cardano-ogmios/client";
 
-describe("OgmiosSyncClient", () => {
+describe("OgmiosRunner", () => {
   const mockConfig: ConnectionConfig = { host: "localhost", port: 1337 };
 
   let mockContext: InteractionContext;
@@ -51,8 +51,8 @@ describe("OgmiosSyncClient", () => {
 
   describe("constructor", () => {
     it("should create an instance with provided config", () => {
-      const client = new OgmiosSyncClient(mockConfig);
-      expect(client).toBeInstanceOf(OgmiosSyncClient);
+      const runner = new OgmiosIndexer(mockConfig);
+      expect(runner).toBeInstanceOf(OgmiosIndexer);
     });
   });
 
@@ -73,8 +73,8 @@ describe("OgmiosSyncClient", () => {
         },
       );
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: "tip" });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: "tip" });
 
       const result = await generator.next();
 
@@ -103,8 +103,8 @@ describe("OgmiosSyncClient", () => {
         },
       );
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: "tip" });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: "tip" });
 
       const result = await generator.next();
 
@@ -140,8 +140,8 @@ describe("OgmiosSyncClient", () => {
         },
       );
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: "tip" });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: "tip" });
 
       const result1 = await generator.next();
       expect(result1.value).toEqual({
@@ -174,8 +174,8 @@ describe("OgmiosSyncClient", () => {
         },
       );
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: mockPoint });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: mockPoint });
 
       await generator.next();
 
@@ -197,8 +197,8 @@ describe("OgmiosSyncClient", () => {
         },
       );
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: "tip" });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: "tip" });
 
       await generator.next();
 
@@ -211,8 +211,8 @@ describe("OgmiosSyncClient", () => {
       const mockError = new Error("Connection failed");
       vi.mocked(createInteractionContext).mockRejectedValue(mockError);
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: "tip" });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: "tip" });
 
       await expect(generator.next()).rejects.toThrow(SocketError);
     });
@@ -221,8 +221,8 @@ describe("OgmiosSyncClient", () => {
       const mockError = new Error("Client creation failed");
       vi.mocked(createChainSynchronizationClient).mockRejectedValue(mockError);
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: "tip" });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: "tip" });
 
       await expect(generator.next()).rejects.toThrow(SocketError);
     });
@@ -239,8 +239,8 @@ describe("OgmiosSyncClient", () => {
         },
       );
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: "tip" });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: "tip" });
 
       await expect(generator.next()).rejects.toThrow("ogmios error");
     });
@@ -257,8 +257,8 @@ describe("OgmiosSyncClient", () => {
         },
       );
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: "tip" });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: "tip" });
 
       await expect(generator.next()).rejects.toThrow(
         "close 1000 Normal closure",
@@ -278,8 +278,8 @@ describe("OgmiosSyncClient", () => {
         },
       );
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: "tip" });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: "tip" });
 
       await generator.next();
       await generator.return();
@@ -304,8 +304,8 @@ describe("OgmiosSyncClient", () => {
         },
       );
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: "tip" });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: "tip" });
 
       await generator.next();
 
@@ -319,8 +319,8 @@ describe("OgmiosSyncClient", () => {
 
       vi.mocked(createChainSynchronizationClient).mockRejectedValue(mockError);
 
-      const client = new OgmiosSyncClient(mockConfig);
-      const generator = client.sync({ point: "tip" });
+      const runner = new OgmiosIndexer(mockConfig);
+      const generator = runner.run({ point: "tip" });
 
       await expect(generator.next()).rejects.toThrow(SocketError);
     });
