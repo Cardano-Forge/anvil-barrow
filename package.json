@@ -1,8 +1,8 @@
 {
   "name": "@ada-anvil/barrow",
-  "description": "Chain indexing tools for the Cardano blockchain.",
+  "description": "A framework for building event processing tools",
   "version": "0.0.2",
-  "author": "Ada anvil  ",
+  "author": "Anvil Development Agency",
   "license": "Apache-2.0",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"

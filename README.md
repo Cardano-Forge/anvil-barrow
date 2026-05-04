@@ -1,6 +1,6 @@
 # Barrow [![Version](https://img.shields.io/npm/v/@ada-anvil/barrow?colorB=blue)](https://www.npmjs.com/package/@ada-anvil/barrow)
 
-Barrow is a framework for building blockchain indexing tools. It provides a simple API for defining and running indexing jobs on the Cardano blockchain.
+Barrow is a framework for building event processing tools. It provides a `Controller` class that manages any event-producing service through a simple `Runner` interface.
 
 ## Installation
 
@@ -8,122 +8,159 @@ Barrow is a framework for building blockchain indexing tools. It provides a simp
 npm i @ada-anvil/barrow
 ```
 
+## Architecture
+
+Barrow is built around two core abstractions:
+
+- **Controller**: Manages the lifecycle of event processing (start, pause, resume, error handling, throttling, filtering)
+- **Runner**: Produces events via an async generator. Any service that implements the `Runner` interface can be controlled
+
+```
+┌─────────────────────────────────────┐
+│            Controller               │
+│  ┌─────────────────────────────┐    │
+│  │  lifecycle management       │    │
+│  │  error handling / retry     │◄──►│  Runner (any implementation)
+│  │  filtering / throttling     │    │  ┌───────────────────┐
+│  │  tracing / logging          │    │  │ run() → events    │
+│  └─────────────────────────────┘    │  │ resume() → events │
+└─────────────────────────────────────┘  └───────────────────┘
+```
+
 ## Usage
 
 ### Controller
 
-The `Controller` class is the main entry point for defining and running indexing jobs.
+The `Controller` class is the main entry point for defining and running event processing jobs.
 
 **Constructor:**
 
 ```typescript
-new Controller(config, startOpts?)
+new Controller<TRunner>(config, startOpts?)
 ```
 
 **Parameters:**
 
 1. `config` (required): Configuration object with the following properties:
-   - `syncClient`: An instance of `SyncClient` that provides a generator for sync events.
-   - `errorHandler` (optional): An instance of `ErrorHandler` that handles errors during sync events.
-   - `logger` (optional): A function that handles log events.
-   - `tracingConfig` (optional): An object that configures tracing for the controller.
+   - `runner`: An instance implementing the `Runner` interface
+   - `errorHandler` (optional): An instance of `ErrorHandler` that handles errors during event processing
+   - `logger` (optional): A function that handles log events
+   - `tracing` (optional): An instance of `ControllerTracer` for metrics and tracing
 
-2. `startOpts` (optional): Default options to use for all `start()` calls. These will be merged with options passed to `start()`, with `start()` options taking precedence. See [Sync Job Configuration](#sync-job-configuration) for available options (excluding `point`).
+2. `startOpts` (optional): Default options to use for all `start()` calls. These will be merged with options passed to `start()`, with `start()` options taking precedence. See [Job Configuration](#job-configuration) for available options.
 
-#### SyncClient
+#### Runner Interface
 
-The `SyncClient` interface defines a method for generating sync events.
-
-Currently, the only implementation of `SyncClient` is `OgmiosSyncClient`, which uses the [Ogmios API](https://ogmios.dev/mini-protocols/local-chain-sync/) to sync with the blockchain.
-
-Future support is planned for other sync clients such as [Dolos](https://docs.txpipe.io/).
-
-#### ErrorHandler
-
-The `ErrorHandler` class is responsible for handling errors during sync events.
-
-**Methods:**
-
-- `register(filter, handler)`: Registers an error handler or retry policy for a specific error type or class.
-- `handle(error)`: Processes an error and returns the handling result.
-- `reset()`: Resets the error handler to its initial state.
-
-##### Retry policies
-
-Built-in retry handlers:
-
-- `ErrorHandler.retry(options)`: Retries the sync event after a specified delay.
-- `ErrorHandler.retryWithBackoff(options)`: Retries the sync event with exponential backoff.
-
-##### Error filters
-
-A filter can be:
-
-- An Error class (only instances of that class will be handled)
-- A function that takes an error and returns a boolean indicating whether to handle it
-
-##### Retry options
-
-Options for `ErrorHandler.retry` and `ErrorHandler.retryWithBackoff`:
-
-- `maxRetries` (optional): Maximum number of retries (default: 3)
-- `baseDelay` (optional): Base delay in milliseconds between retries (default: 1000)
-- `backoff` (optional): Use exponential backoff (default: false)
-- `persistent` (optional): Preserve error handler state between retries (default: false)
-
-### Getting Started
-
-#### Step 1: Install Dependencies
-
-Install the Ogmios client:
-
-```bash
-npm i @cardano-ogmios/client
-```
-
-#### Step 2: Create a Sync Client
-
-Create an instance of `OgmiosSyncClient`:
+Any class can be a runner by implementing this interface:
 
 ```typescript
-import { OgmiosSyncClient } from "@ada-anvil/barrow/ogmios";
+interface Runner<Def extends RunnerDef> {
+  run(opts: Def["opts"]): AsyncGenerator<Def["event"], void>;
+  resume(meta: Def["meta"]): AsyncGenerator<Def["event"], void>;
+  createMeta(opts: Def["opts"]): Def["meta"];
+  createCounters(opts: Def["opts"]): Counters<Def["event"]>;
+  onEventProcessed?(event: Def["event"], mut: { meta: Def["meta"] }): void;
+}
+```
 
-const syncClient = new OgmiosSyncClient({
+Where `RunnerDef` defines the types for your runner:
+
+```typescript
+interface RunnerDef<TMeta, TOpts, TEvent> {
+  meta: TMeta;
+  opts: TOpts;
+  event: TEvent;
+}
+```
+
+### Available Runners
+
+#### OgmiosIndexer (Chain Synchronization)
+
+Syncs blocks from the Cardano blockchain using Ogmios. Extends `IndexerRunner` which provides common indexer functionality.
+
+```typescript
+import { OgmiosIndexer } from "@ada-anvil/barrow/ogmios";
+
+const runner = new OgmiosIndexer({
   host: "localhost",
   port: 1337,
   tls: false,
 });
 ```
 
-Configuration options:
+Events: `{ type: "apply", block, tip }` | `{ type: "reset", point, tip }`
 
-- `host`: Ogmios node hostname
-- `port`: Ogmios node port
-- `tls`: Enable TLS connection
+#### OgmiosMempool (Mempool Monitoring)
+
+Monitors the Cardano mempool for pending transactions.
+
+```typescript
+import { OgmiosMempool } from "@ada-anvil/barrow/ogmios";
+
+const runner = new OgmiosMempool({
+  host: "localhost",
+  port: 1337,
+  tls: false,
+});
+```
+
+Events: `{ type: "txs", txs: string[] }`
+
+### Getting Started
+
+#### Step 1: Install Dependencies
+
+```bash
+npm i @cardano-ogmios/client
+```
+
+#### Step 2: Create a Runner
+
+For chain indexing:
+
+```typescript
+import { OgmiosIndexer, type IndexerRunnerDef, type OgmiosSchema } from "@ada-anvil/barrow/ogmios";
+
+const runner = new OgmiosIndexer({
+  host: "localhost",
+  port: 1337,
+  tls: false,
+});
+```
+
+For mempool monitoring:
+
+```typescript
+import { OgmiosMempool, type MempoolRunnerDef } from "@ada-anvil/barrow/ogmios";
+
+const runner = new OgmiosMempool({
+  host: "localhost",
+  port: 1337,
+  tls: false,
+});
+```
 
 #### Step 3: Create a Controller
-
-Create a `Controller` instance with your sync client:
 
 ```typescript
 import { Controller, ErrorHandler } from "@ada-anvil/barrow";
 
-const controller = new Controller({
-  syncClient,
+const controller = new Controller<IndexerRunnerDef<OgmiosSchema>>({
+  runner,
   errorHandler: new ErrorHandler(),
 });
 ```
 
-You can optionally provide default start options as a second parameter. These defaults will be merged with options passed to `start()`:
+You can optionally provide default start options as a second parameter:
 
 ```typescript
-const controller = new Controller(
+const controller = new Controller<IndexerRunnerDef<OgmiosSchema>>(
   {
-    syncClient,
+    runner,
     errorHandler: new ErrorHandler(),
   },
   {
-    // Default options for all start() calls
     throttle: [100, "milliseconds"],
     fn: (event) => {
       console.log(event);
@@ -132,9 +169,7 @@ const controller = new Controller(
 );
 ```
 
-#### Step 4: Start Syncing
-
-Start the controller with a sync job configuration:
+#### Step 4: Start Processing
 
 ```typescript
 await controller.start({
@@ -148,17 +183,17 @@ await controller.start({
   throttle: [100, "milliseconds"],
 });
 
-// Wait for sync completion
+// Wait for completion
 await controller.waitForCompletion();
 ```
 
-#### Controlling Sync Jobs
+#### Controlling Jobs
 
 **Pause and Resume:**
 
 ```typescript
-await controller.pause(); // Preserves state
-await controller.resume(); // Resumes from paused point
+await controller.pause();
+await controller.resume();
 ```
 
 **Restart:**
@@ -167,49 +202,15 @@ Calling `start()` on a paused job resets the state and starts from scratch.
 
 #### Job Completion
 
-A sync job can complete in two ways:
+A job can complete in two ways:
 
-1. **Using `takeUntil`**: The `takeUntil` function returns `true`
+1. **Using `takeUntil`**: The function returns `true`
 
    ```typescript
    await controller.start({
-     fn: (event) => {
-       /* process event */
-     },
+     fn: (event) => { /* process event */ },
      point: startPoint,
      takeUntil: ({ state }) => state.meta.syncTip?.slot >= targetSlot,
-   });
-   ```
-
-   **Note**: `takeUntil` runs on ALL events, including filtered ones. This allows you to stop syncing based on conditions that don't depend on event processing:
-
-   ```typescript
-   await controller.start({
-     fn: (event) => {
-       /* process event */
-     },
-     filter: (event) => event.type === "apply", // Only process apply events
-     point: startPoint,
-     takeUntil: ({ state }) => state.counters.filterCount >= 100, // Stop after 100 filtered events
-   });
-   ```
-
-   To run `takeUntil` only on processed events, you can use the `isFilteredOut` property:
-
-   ```typescript
-   await controller.start({
-     fn: (event) => {
-       /* process event */
-     },
-     filter: (event) => event.type === "apply",
-     point: startPoint,
-     takeUntil: ({ lastEvent, state }) => {
-       // Return early if the event was filtered out
-       if (lastEvent.isFilteredOut) return false;
-
-       // Only count processed events
-       return state.counters.applyCount >= 10;
-     },
    });
    ```
 
@@ -217,7 +218,6 @@ A sync job can complete in two ways:
    ```typescript
    await controller.start({
      fn: (event) => {
-       // Process event
        if (someCondition) {
          return { done: true };
        }
@@ -226,57 +226,47 @@ A sync job can complete in two ways:
    });
    ```
 
-#### Throttling
+#### Throttling and Filtering
 
-The `throttle` option allows you to control the rate of event processing by adding delays between events. Throttle is applied to ALL events, including filtered ones:
+Throttle and filter apply to ALL events, including filtered ones:
 
 ```typescript
 await controller.start({
-  fn: (event) => {
-    /* process event */
-  },
-  filter: (event) => event.type === "apply", // Only process apply events
+  fn: (event) => { /* process event */ },
+  filter: (event) => event.type === "apply",
   point: startPoint,
-  throttle: [100, "milliseconds"], // Delays after ALL events (filtered and processed)
+  throttle: [100, "milliseconds"],
 });
 ```
 
-### Sync Job Configuration
+### Job Configuration
 
 Configuration properties:
 
-- `point` (required): Starting point for syncing (slot and block ID)
-- `fn` (optional): Function that handles sync events
-- `throttle` (optional): Throttle duration for sync events. Throttle applies to ALL events (including filtered events)
-- `filter` (optional): Function to filter sync events
-- `takeUntil` (optional): Function that returns true to stop syncing. This function runs on ALL events (including filtered events). Use `lastEvent.isFilteredOut` to handle filtered events differently
+- `fn` (optional): Function that handles events
+- `throttle` (optional): Delay between events `[value, unit]`
+- `filter` (optional): Function to filter events (returns boolean)
+- `takeUntil` (optional): Function that returns true to stop processing
 
-#### Data Structures
+Runners may have additional required options (e.g., `point` for indexers).
 
-**Sync Event:**
+### Data Structures
 
-- `type`: Event type
-- `block`: Block that was synced
-- `tip`: Current chain tip
+Event shapes depend on the runner. Built-in runners emit:
 
-**Point:**
+**OgmiosIndexer events:**
+
+- `apply`: `{ type: "apply", block, tip }`
+- `reset`: `{ type: "reset", point, tip }`
+
+**OgmiosMempool events:**
+
+- `txs`: `{ type: "txs", txs: string[] }`
+
+**Point (IndexerRunner):**
 
 - `slot`: Slot number
 - `id`: Block hash
-
-**Tip:**
-
-- `slot`: Slot number
-- `id`: Block hash
-- `height`: Block height
-
-**Block:**
-
-- `type`: Block type
-- `era`: Cardano era
-- `id`: Block hash
-- `height`: Block height
-- `slot` (optional): Slot number
 
 ## Logger
 
@@ -284,24 +274,16 @@ Barrow provides built-in logging support using [Pino](https://getpino.io).
 
 ### Setup
 
-Install Pino:
-
 ```bash
 npm i pino
 ```
-
-Configure the logger:
 
 ```typescript
 import { pinoLogger } from "@ada-anvil/barrow/pino";
 import { pino } from "pino";
 
-const controller = new Controller({
-  syncClient: new OgmiosSyncClient({
-    host: "localhost",
-    port: 1337,
-    tls: false,
-  }),
+const controller = new Controller<IndexerRunnerDef<OgmiosSchema>>({
+  runner: new OgmiosIndexer({ host: "localhost", port: 1337, tls: false }),
   logger: pinoLogger(pino()),
 });
 ```
@@ -312,50 +294,55 @@ Barrow supports [OpenTelemetry](https://opentelemetry.io) for metrics and tracin
 
 ### Setup
 
-Install OpenTelemetry:
-
 ```bash
 npm i @opentelemetry/api
 ```
 
-Configure tracing:
-
 ```typescript
 import { otelTracingConfig } from "@ada-anvil/barrow/otel";
+import { ControllerTracer } from "@ada-anvil/barrow";
 
-const controller = new Controller({
-  syncClient: new OgmiosSyncClient({
-    host: "localhost",
-    port: 1337,
-    tls: false,
-  }),
-  tracingConfig: otelTracingConfig(),
+const controller = new Controller<MempoolRunnerDef>({
+  runner: new OgmiosMempool({ host: "localhost", port: 1337, tls: false }),
+  tracing: new ControllerTracer(otelTracingConfig()),
 });
 ```
 
-The `otelTracingConfig` function accepts either:
+For indexer-specific metrics (sync tip, chain tip, is_synced, apply/reset counts), use `IndexerControllerTracer`:
 
-- A `Meter` instance
-- A configuration object with `name`, `version` (optional), and `opts` (optional)
+```typescript
+import { IndexerControllerTracer, indexerMetricDefs } from "@ada-anvil/barrow/indexer";
 
-### Available Metrics
+const tracing = new IndexerControllerTracer(
+  otelTracingConfig({ metrics: indexerMetricDefs })
+);
+```
 
-# Metric Definitions
+### Core Metrics
 
-| Metric Key     | Type      | Name             | Description                       | Value Type | Unit         |
-| -------------- | --------- | ---------------- | --------------------------------- | ---------- | ------------ |
-| status         | gauge     | status           | Controller status                 | int        | -            |
-| syncTipSlot    | gauge     | sync_tip_slot    | Sync tip slot                     | int        | -            |
-| syncTipHeight  | gauge     | sync_tip_height  | Sync tip height                   | int        | -            |
-| chainTipSlot   | gauge     | chain_tip_slot   | Chain tip slot                    | int        | -            |
-| chainTipHeight | gauge     | chain_tip_height | Chain tip height                  | int        | -            |
-| isSynced       | gauge     | is_synced        | Is synced (1 = yes, 0 = no)       | int        | -            |
-| processingTime | histogram | processing_time  | Time it takes to process an event | -          | milliseconds |
-| arrivalTime    | histogram | arrival_time     | Time it takes to receive an event | -          | milliseconds |
-| applyCount     | gauge     | apply_count      | Number of apply events            | int        | -            |
-| resetCount     | gauge     | reset_count      | Number of reset events            | int        | -            |
-| filterCount    | gauge     | filter_count     | Number of filtered events         | int        | -            |
-| errorCount     | gauge     | error_count      | Number of errors                  | int        | -            |
+Available on all runners via `ControllerTracer`:
+
+| Metric Key     | Type      | Name             | Description                       | Unit         |
+| -------------- | --------- | ---------------- | --------------------------------- | ------------ |
+| status         | gauge     | status           | Controller status                 | -            |
+| processingTime | histogram | processing_time  | Time to process an event          | milliseconds |
+| arrivalTime    | histogram | arrival_time     | Time to receive an event          | milliseconds |
+| filterCount    | gauge     | filter_count     | Number of filtered events         | -            |
+| errorCount     | gauge     | error_count      | Number of errors                  | -            |
+
+### Indexer-Specific Metrics
+
+Available when using `IndexerControllerTracer`:
+
+| Metric Key     | Type      | Name             | Description                       |
+| -------------- | --------- | ---------------- | --------------------------------- |
+| syncTipSlot    | gauge     | sync_tip_slot    | Sync tip slot                     |
+| syncTipHeight  | gauge     | sync_tip_height  | Sync tip height                   |
+| chainTipSlot   | gauge     | chain_tip_slot   | Chain tip slot                    |
+| chainTipHeight | gauge     | chain_tip_height | Chain tip height                  |
+| isSynced       | gauge     | is_synced        | Is synced (1 = yes, 0 = no)       |
+| applyCount     | gauge     | apply_count      | Number of apply events            |
+| resetCount     | gauge     | reset_count      | Number of reset events            |
 
 ## Examples
 
@@ -369,7 +356,7 @@ Example implementations are available in the `src/examples` directory.
    npm i
    ```
 
-2. Create a `.env` file in the project root:
+2. Create a `.env` file:
 
    ```dotenv
    OGMIOS_NODE_HOST=<ogmios-node-host>
@@ -379,5 +366,6 @@ Example implementations are available in the `src/examples` directory.
 
 3. Run an example:
    ```bash
-   npm run example kitchen-sink
+   npm run example ogmios-indexer
+   npm run example ogmios-mempool
    ```
