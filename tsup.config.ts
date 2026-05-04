@@ -2,7 +2,13 @@ import { copyFile } from "node:fs/promises";
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/dep", "!**/*.test.ts"],
+  entry: [
+    "src/index.ts",
+    "src/dep/otel.ts",
+    "src/dep/pino.ts",
+    "src/dep/ogmios/index.ts",
+    "!**/*.test.ts",
+  ],
   dts: true,
   format: ["cjs", "esm"],
   clean: true,

@@ -5,13 +5,13 @@ import {
   type Schema as OgmiosSchemaNs,
 } from "@cardano-ogmios/client";
 import { isErr, parseError, wrap } from "trynot";
-import { SocketClosedError, SocketError } from "../errors";
+import { SocketClosedError, SocketError } from "../../errors";
 import {
   type IndexerEvent,
   IndexerRunner,
   type IndexerRunnerDef,
   type Schema,
-} from "../indexer";
+} from "../../indexer";
 
 export type OgmiosSchema = Schema<
   OgmiosSchemaNs.Block,
