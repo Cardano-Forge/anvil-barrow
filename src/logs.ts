@@ -1,5 +1,5 @@
 import type { LogEvent } from "./controller";
-import type { Schema } from "./types";
+import type { RunnerDef } from "./types";
 
 export const logLevels = [
   "fatal",
@@ -12,8 +12,8 @@ export const logLevels = [
 
 export type LogLevel = (typeof logLevels)[number];
 
-export function getLogLevel<TSchema extends Schema>(
-  logEvent: LogEvent<TSchema>,
+export function getLogLevel<TDef extends RunnerDef>(
+  logEvent: LogEvent<TDef>,
 ): LogLevel {
   switch (logEvent.type) {
     case "event.received":

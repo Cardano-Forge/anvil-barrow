@@ -4,14 +4,14 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { type Level, pino } from "pino";
 import { assert, unwrap } from "trynot";
 import { Controller } from "../controller";
-import { type OgmiosSchema, OgmiosSyncClient } from "../dep/ogmios";
-import { otelTracingConfig } from "../dep/otel";
-import { pinoLogger } from "../dep/pino";
+import { type MempoolRunnerDef, OgmiosMempool } from "../dep/ogmios";
+import { OtelTracer } from "../dep/otel";
+import { PinoLogger } from "../dep/pino";
 import { ErrorHandler } from "../error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "../errors";
 
 // Setup ogmios sync client
-const syncClient = new OgmiosSyncClient({
+const runner = new OgmiosMempool({
   host: process.env.OGMIOS_NODE_HOST,
   port: Number(process.env.OGMIOS_NODE_PORT),
   tls: Boolean(process.env.OGMIOS_NODE_TLS),
@@ -23,11 +23,11 @@ new NodeSDK({
     exporter: new OTLPMetricExporter(),
   }),
 }).start();
-const tracingConfig = otelTracingConfig();
+const tracing = new OtelTracer();
 
 // Setup pino logger
 const level: Level = "trace";
-const logger = pinoLogger<OgmiosSchema>(
+const logger = new PinoLogger<MempoolRunnerDef>(
   pino({
     level,
     transport: {
@@ -61,15 +61,15 @@ const errorHandler = new ErrorHandler()
     ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, backoff: true }),
   );
 
-const controller = new Controller({
-  syncClient,
+const controller = new Controller<MempoolRunnerDef>({
+  runner,
   errorHandler,
   logger,
-  tracingConfig,
+  tracing,
 });
 
 async function main() {
-  // Start sync job
+  // Start sync jo
   const result = await unwrap(
     controller.start({
       // Throttle event arrival rate
@@ -77,22 +77,16 @@ async function main() {
 
       // Only process a specific event
       filter: (event) => {
-        return event.type === "apply" && event.block.height === 3859660;
+        return event.type === "txs" && event.txs.length > 0;
       },
 
       // Complete sync job when event is processed
       takeUntil: ({ state }) => {
-        return state.counters.applyCount >= 1;
+        return state.counters.txsCount >= 1;
       },
 
-      fn: (_syncEvent) => {
-        // Process the sync event
-      },
-
-      // Define the starting point
-      point: {
-        id: "fa5a6a51632b90557665fcb33970f4fb372dff6ad0191e083ff3b6b221f2b87e",
-        slot: 101163751,
+      fn: (_event) => {
+        // Process the event
       },
     }),
   );
@@ -103,6 +97,8 @@ async function main() {
   await controller.waitForCompletion();
 
   assert(controller.state.status === "done");
+
+  console.log("final state", controller.state);
 }
 
 main()

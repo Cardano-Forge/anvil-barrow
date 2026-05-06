@@ -14,44 +14,12 @@ export type Metric = {
 };
 
 export const metricDefs = {
-  // metadata
   status: {
     type: "gauge",
     name: "status",
     description: `Controller status (${controllerStatuses.map((s, i) => `${s} = ${i}`).join(", ")})`,
     valueType: "int",
   },
-  syncTipSlot: {
-    type: "gauge",
-    name: "sync_tip_slot",
-    description: "Sync tip slot",
-    valueType: "int",
-  },
-  syncTipHeight: {
-    type: "gauge",
-    name: "sync_tip_height",
-    description: "Sync tip height",
-    valueType: "int",
-  },
-  chainTipSlot: {
-    type: "gauge",
-    name: "chain_tip_slot",
-    description: "Chain tip slot",
-    valueType: "int",
-  },
-  chainTipHeight: {
-    type: "gauge",
-    name: "chain_tip_height",
-    description: "Chain tip height",
-    valueType: "int",
-  },
-  isSynced: {
-    type: "gauge",
-    name: "is_synced",
-    description: "Is synced (1 = yes, 0 = no)",
-    valueType: "int",
-  },
-  // Histograms
   processingTime: {
     type: "histogram",
     name: "processing_time",
@@ -63,19 +31,6 @@ export const metricDefs = {
     name: "arrival_time",
     description: "Time it takes to receive an event",
     unit: "milliseconds",
-  },
-  // Counters
-  applyCount: {
-    type: "gauge",
-    name: "apply_count",
-    description: "Number of apply events",
-    valueType: "int",
-  },
-  resetCount: {
-    type: "gauge",
-    name: "reset_count",
-    description: "Number of reset events",
-    valueType: "int",
   },
   filterCount: {
     type: "gauge",
@@ -92,8 +47,8 @@ export const metricDefs = {
 } satisfies Record<string, Metric>;
 export type Metrics = typeof metricDefs;
 
-export type TracingConfig = {
+export type TracingConfig<TMetrics extends Record<string, Metric> = Metrics> = {
   metrics?: {
-    [K in keyof Metrics]?: MetricTypes[Metrics[K]["type"]];
+    [K in keyof TMetrics]?: MetricTypes[TMetrics[K]["type"]];
   };
 };

@@ -1,8 +1,8 @@
 {
   "name": "@ada-anvil/barrow",
-  "description": "Chain indexing tools for the Cardano blockchain.",
+  "description": "A framework for building event processing tools",
   "version": "0.0.2",
-  "author": "Ada anvil  ",
+  "author": "Anvil Development Agency",
   "license": "Apache-2.0",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
@@ -43,49 +43,6 @@
     "test:watch": "vitest",
     "pre": "npm run lint && npm run check && npm run build && npm run test",
     "example": "node --import=tsx --env-file=.env src/examples/index.ts"
-  },
-  "exports": {
-    "./package.json": "./package.json",
-    ".": {
-      "require": {
-        "types": "./index.d.ts",
-        "require": "./index.js"
-      },
-      "import": {
-        "types": "./index.d.mts",
-        "import": "./index.mjs"
-      }
-    },
-    "./ogmios": {
-      "require": {
-        "types": "./dep/ogmios.d.ts",
-        "require": "./dep/ogmios.js"
-      },
-      "import": {
-        "types": "./dep/ogmios.d.mts",
-        "import": "./dep/ogmios.mjs"
-      }
-    },
-    "./otel": {
-      "require": {
-        "types": "./dep/otel.d.ts",
-        "require": "./dep/otel.js"
-      },
-      "import": {
-        "types": "./dep/otel.d.mts",
-        "import": "./dep/otel.mjs"
-      }
-    },
-    "./pino": {
-      "require": {
-        "types": "./dep/pino.d.ts",
-        "require": "./dep/pino.js"
-      },
-      "import": {
-        "types": "./dep/pino.d.mts",
-        "import": "./dep/pino.mjs"
-      }
-    }
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",

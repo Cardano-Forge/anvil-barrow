@@ -4,90 +4,78 @@ import { ProcessingError } from "./errors";
 import { noop } from "./lib/noop";
 import { toMilliseconds, type Unit } from "./time";
 import type { TracingConfig } from "./tracing";
-import type { MaybePromise, Schema, SyncClient, SyncEvent } from "./types";
+import {
+  type AnyEvent,
+  type Counters,
+  getEventCounterKey,
+  type MaybePromise,
+  type Runner,
+  type RunnerDef,
+} from "./types";
 
-export class Controller<TSchema extends Schema = Schema> {
-  protected _state: ControllerState<TSchema> = {
+export class Controller<TDef extends RunnerDef> {
+  protected _state: ControllerState<TDef> = {
     status: "idle",
   };
 
-  protected _config: Required<ControllerConfig<TSchema>>;
-  protected _startOpts: Omit<ControllerStartOpts<TSchema>, "point">;
+  protected _config: Required<ControllerConfig<TDef>>;
+  protected _startOpts: ControllerStartOpts<TDef>;
 
   constructor(
-    config: ControllerConfig<TSchema>,
-    startOpts: Omit<ControllerStartOpts<TSchema>, "point"> = {},
+    config: ControllerConfig<TDef>,
+    startOpts: Partial<ControllerStartOpts<TDef>> = {},
   ) {
     this._config = {
-      syncClient: config.syncClient,
+      runner: config.runner,
       errorHandler: config.errorHandler ?? new ErrorHandler(),
-      logger: config.logger ?? noop,
-      tracingConfig: config.tracingConfig ?? {},
+      logger: config.logger ?? { log: noop },
+      tracing: config.tracing ?? new ControllerTracer(),
     };
-    this._startOpts = startOpts;
 
-    this._config.tracingConfig.metrics?.status?.record(
-      controllerStatuses.indexOf(this._state.status),
-    );
+    this._startOpts = startOpts;
+    this._config.tracing.recordStatus(this._state.status);
   }
 
-  get state(): ControllerState<TSchema> {
+  get state(): ControllerState<TDef> {
     return this._state;
   }
 
   async start(
-    opts: ControllerStartOpts<TSchema>,
-  ): Promise<Result<ControllerStateRunning<TSchema>>> {
+    opts: ControllerStartOpts<TDef>,
+  ): Promise<Result<ControllerStateRunning<TDef>>> {
     switch (this._state.status) {
       case "running": {
         return new Error("Controller is already running");
       }
     }
 
-    const { point, ...startOpts } = { ...this._startOpts, ...opts };
+    const startOpts = { ...this._startOpts, ...opts };
 
     this._state = {
       status: "running",
-      generator: this._config.syncClient.sync({ point }),
+      generator: this._config.runner.run(startOpts),
       promise: Promise.resolve(),
       meta: {
         startOpts,
-        startingPoint: point,
-        syncTip: undefined,
-        chainTip: undefined,
         lastError: undefined,
+        ...this._config.runner.createMeta(startOpts),
       },
       counters: {
         filterCount: 0,
-        applyCount: 0,
-        resetCount: 0,
         errorCount: 0,
+        ...this._config.runner.createCounters(startOpts),
       },
     };
 
-    this._config.tracingConfig.metrics?.status?.record(
-      controllerStatuses.indexOf(this._state.status),
-    );
-    this._config.tracingConfig.metrics?.isSynced?.record(0);
-    this._config.tracingConfig.metrics?.syncTipSlot?.record(0);
-    this._config.tracingConfig.metrics?.syncTipHeight?.record(0);
-    this._config.tracingConfig.metrics?.chainTipSlot?.record(0);
-    this._config.tracingConfig.metrics?.chainTipHeight?.record(0);
-    this._config.tracingConfig.metrics?.filterCount?.record(0);
-    this._config.tracingConfig.metrics?.applyCount?.record(0);
-    this._config.tracingConfig.metrics?.resetCount?.record(0);
-    this._config.tracingConfig.metrics?.errorCount?.record(0);
+    this._config.tracing.recordStatus(this._state.status);
+    this._config.tracing.recordStarted();
 
     this._emitLogEvent({
       type: "controller.started",
-      data: {
-        point,
-        startOpts,
-        meta: this._state.meta,
-      },
+      data: { meta: this._state.meta },
     });
 
-    this._state.promise = this._runSyncLoop(startOpts);
+    this._state.promise = this._runLoop(startOpts);
 
     return this._state;
   }
@@ -103,7 +91,7 @@ export class Controller<TSchema extends Schema = Schema> {
     }
   }
 
-  async pause(): Promise<Result<ControllerStateStopped<TSchema>>> {
+  async pause(): Promise<Result<ControllerStateStopped<TDef>>> {
     switch (this._state.status) {
       case "running": {
         try {
@@ -135,34 +123,28 @@ export class Controller<TSchema extends Schema = Schema> {
     }
   }
 
-  async resume(): Promise<Result<ControllerStateRunning<TSchema>>> {
+  async resume(): Promise<Result<ControllerStateRunning<TDef>>> {
     switch (this._state.status) {
       case "paused": {
-        const resumePoint =
-          this._state.meta.syncTip ?? this._state.meta.startingPoint;
-
         this._state = {
           status: "running",
-          generator: this._config.syncClient.sync({ point: resumePoint }),
+          generator: this._config.runner.resume(this._state.meta),
           promise: Promise.resolve(),
           meta: this._state.meta,
           counters: this._state.counters,
         };
 
-        this._config.tracingConfig.metrics?.status?.record(
-          controllerStatuses.indexOf(this._state.status),
-        );
+        this._config.tracing.recordStatus(this._state.status);
 
         this._emitLogEvent({
           type: "controller.resumed",
           data: {
-            resumePoint,
             counters: this._state.counters,
             meta: this._state.meta,
           },
         });
 
-        this._state.promise = this._runSyncLoop(this._state.meta.startOpts);
+        this._state.promise = this._runLoop(this._state.meta.startOpts);
 
         return this._state;
       }
@@ -174,20 +156,18 @@ export class Controller<TSchema extends Schema = Schema> {
     }
   }
 
-  private _emitLogEvent(logEvent: Omit<LogEvent<TSchema>, "timestamp">): void {
+  private _emitLogEvent(logEvent: Omit<LogEvent<TDef>, "timestamp">): void {
     try {
-      this._config.logger({
+      this._config.logger?.log({
         ...logEvent,
         timestamp: Date.now(),
-      } as LogEvent<TSchema>);
+      } as LogEvent<TDef>);
     } catch {
       // Silently ignore event handler errors to prevent disrupting controller flow
     }
   }
 
-  private async _runSyncLoop(
-    opts: Omit<ControllerStartOpts<TSchema>, "point">,
-  ): Promise<void> {
+  private async _runLoop(opts: ControllerStartOpts<TDef>): Promise<void> {
     assert(this._state.status === "running");
 
     try {
@@ -212,9 +192,7 @@ export class Controller<TSchema extends Schema = Schema> {
       for await (const event of this._state.generator) {
         const arrivalTime = Date.now();
         if (typeof lastArrivalTime === "number") {
-          this._config.tracingConfig.metrics?.arrivalTime?.record(
-            arrivalTime - lastArrivalTime,
-          );
+          this._config.tracing.recordArrivalTime(arrivalTime - lastArrivalTime);
         }
         lastArrivalTime = arrivalTime;
 
@@ -230,7 +208,8 @@ export class Controller<TSchema extends Schema = Schema> {
           if (opts.filter && !(await opts.filter(event))) {
             isFilteredOut = true;
             this._state.counters.filterCount += 1;
-            this._config.tracingConfig.metrics?.filterCount?.record(
+            this._config.tracing.recordEventFiltered(
+              event,
               this._state.counters.filterCount,
             );
             this._emitLogEvent({
@@ -249,7 +228,16 @@ export class Controller<TSchema extends Schema = Schema> {
 
             const processingTime = Date.now() - processingStart;
 
-            this._config.tracingConfig.metrics?.processingTime?.record(
+            const counters = this._state.counters as Counters<TDef["event"]>;
+            const counterKey = getEventCounterKey(event);
+            if (typeof counters?.[counterKey] === "number") {
+              (counters[counterKey] as number) += 1;
+            }
+
+            this._config.runner.onEventProcessed?.(event, this._state);
+            this._config.tracing.recordEventProcessed(
+              event,
+              this._state.counters,
               processingTime,
             );
 
@@ -262,54 +250,14 @@ export class Controller<TSchema extends Schema = Schema> {
               },
             });
 
-            this._state.meta.chainTip = event.tip;
-            if (typeof event.tip === "object") {
-              this._config.tracingConfig.metrics?.chainTipSlot?.record(
-                event.tip.slot,
-              );
-              this._config.tracingConfig.metrics?.chainTipHeight?.record(
-                event.tip.height,
-              );
-            }
-            if (event.type === "apply" && event.block.type !== "ebb") {
-              this._state.meta.syncTip = {
-                slot: event.block.slot,
-                id: event.block.id,
-                height: event.block.height,
-              };
-              this._config.tracingConfig.metrics?.syncTipSlot?.record(
-                event.block.slot,
-              );
-              this._config.tracingConfig.metrics?.syncTipHeight?.record(
-                event.block.height,
-              );
-            }
-
-            if (
-              event.type === "apply" &&
-              event.block.type !== "ebb" &&
-              typeof event.tip !== "string" &&
-              event.block.height === event.tip.height
-            ) {
-              this._config.tracingConfig.metrics?.isSynced?.record(1);
-            } else {
-              this._config.tracingConfig.metrics?.isSynced?.record(0);
-            }
-
-            const eventCounter = `${event.type}Count` as const;
-            this._state.counters[eventCounter] += 1;
-            this._config.tracingConfig.metrics?.[eventCounter]?.record(
-              this._state.counters[eventCounter],
-            );
-
             this._config.errorHandler.reset();
-            this._config.tracingConfig.metrics?.errorCount?.record(0);
+            this._config.tracing.recordErrorCount(0);
           }
 
           if (
             processingResult?.done ||
             (await opts.takeUntil?.({
-              lastEvent: { ...event, isFilteredOut },
+              event: { ...event, isFilteredOut },
               state: this._state,
             }))
           ) {
@@ -319,7 +267,7 @@ export class Controller<TSchema extends Schema = Schema> {
 
           await applyThrottle();
         } catch (error) {
-          throw ProcessingError.fromSyncEvent(event, error);
+          throw new ProcessingError(event, error);
         }
       }
 
@@ -332,9 +280,8 @@ export class Controller<TSchema extends Schema = Schema> {
         meta: this._state.meta,
         counters: this._state.counters,
       };
-      this._config.tracingConfig.metrics?.status?.record(
-        controllerStatuses.indexOf(this._state.status),
-      );
+
+      this._config.tracing.recordStatus(status);
 
       if (status === "done") {
         this._emitLogEvent({
@@ -349,9 +296,7 @@ export class Controller<TSchema extends Schema = Schema> {
     } catch (error) {
       const parsedError = parseError(error);
       this._state.counters.errorCount += 1;
-      this._config.tracingConfig.metrics?.errorCount?.record(
-        this._state.counters.errorCount,
-      );
+      this._config.tracing.recordErrorCount(this._state.counters.errorCount);
       this._state.meta.lastError = parsedError;
 
       this._emitLogEvent({
@@ -382,23 +327,17 @@ export class Controller<TSchema extends Schema = Schema> {
             });
           }
 
-          const resumePoint =
-            this._state.meta.syncTip ?? this._state.meta.startingPoint;
-
           this._emitLogEvent({
             type: "retry.started",
             data: {
               attempt: this._state.counters.errorCount,
-              resumePoint,
               originalError: parsedError,
             },
           });
 
-          this._state.generator = this._config.syncClient.sync({
-            point: resumePoint,
-          });
+          this._state.generator = this._config.runner.resume(this._state.meta);
 
-          return this._runSyncLoop(opts);
+          return this._runLoop(opts);
         }
       }
 
@@ -408,9 +347,8 @@ export class Controller<TSchema extends Schema = Schema> {
         meta: this._state.meta,
         counters: this._state.counters,
       };
-      this._config.tracingConfig.metrics?.status?.record(
-        controllerStatuses.indexOf(this._state.status),
-      );
+
+      this._config.tracing.recordStatus(this._state.status);
 
       this._emitLogEvent({
         type: "controller.completed",
@@ -424,14 +362,12 @@ export class Controller<TSchema extends Schema = Schema> {
   }
 }
 
-export type LogEvent<TSchema extends Schema = Schema> =
+export type LogEvent<TDef extends RunnerDef> =
   | {
       type: "controller.started";
       timestamp: number;
       data: {
-        point: TSchema["startingPoint"];
-        startOpts: Omit<ControllerStartOpts<TSchema>, "point">;
-        meta: ControllerStateMeta<TSchema>;
+        meta: ControllerStateMeta<TDef>;
       };
     }
   | {
@@ -439,17 +375,16 @@ export type LogEvent<TSchema extends Schema = Schema> =
       timestamp: number;
       data: {
         reason: "user_requested" | "error_limit";
-        counters: ControllerStateCounters;
-        meta: ControllerStateMeta<TSchema>;
+        counters: ControllerStateCounters<TDef>;
+        meta: ControllerStateMeta<TDef>;
       };
     }
   | {
       type: "controller.resumed";
       timestamp: number;
       data: {
-        resumePoint: TSchema["startingPoint"] | TSchema["tip"];
-        counters: ControllerStateCounters;
-        meta: ControllerStateMeta<TSchema>;
+        counters: ControllerStateCounters<TDef>;
+        meta: ControllerStateMeta<TDef>;
       };
     }
   | {
@@ -457,22 +392,22 @@ export type LogEvent<TSchema extends Schema = Schema> =
       timestamp: number;
       data: {
         status: "done" | "crashed";
-        counters: ControllerStateCounters;
-        meta: ControllerStateMeta<TSchema>;
+        counters: ControllerStateCounters<TDef>;
+        meta: ControllerStateMeta<TDef>;
       };
     }
   | {
       type: "event.received" | "event.filtered" | "event.processing";
       timestamp: number;
       data: {
-        event: SyncEvent<TSchema>["type"];
+        event: TDef["event"]["type"];
       };
     }
   | {
       type: "event.processed";
       timestamp: number;
       data: {
-        event: SyncEvent<TSchema>["type"];
+        event: TDef["event"]["type"];
         result?: { done: boolean } | undefined;
         processingTime: number;
       };
@@ -490,7 +425,7 @@ export type LogEvent<TSchema extends Schema = Schema> =
       timestamp: number;
       data: {
         error: Error;
-        event?: SyncEvent<TSchema>["type"];
+        event?: TDef["event"]["type"];
         context: "processing" | "sync_loop" | "generator";
       };
     }
@@ -516,60 +451,55 @@ export type LogEvent<TSchema extends Schema = Schema> =
       timestamp: number;
       data: {
         attempt: number;
-        resumePoint?: TSchema["startingPoint"] | TSchema["tip"];
         originalError: Error;
       };
     };
 
-export type ControllerConfig<TSchema extends Schema = Schema> = {
-  syncClient: SyncClient<TSchema>;
-  errorHandler?: ErrorHandler;
-  logger?: (logEvent: LogEvent<TSchema>) => void;
-  tracingConfig?: TracingConfig;
+export type ControllerLogger<TDef extends RunnerDef> = {
+  log: (logEvent: LogEvent<TDef>) => void;
 };
 
-export type ControllerStartOpts<TSchema extends Schema = Schema> = {
-  /** Starting point for syncing (slot and block ID) */
-  point: Schema["startingPoint"];
-  /** Function that handles sync events */
-  fn?: (
-    event: SyncEvent<TSchema>,
-    // biome-ignore lint/suspicious/noConfusingVoidType: Allow void for better DX
-  ) => MaybePromise<{ done: boolean } | undefined | void>;
-  /** Throttle duration for sync events */
+export type ControllerConfig<TDef extends RunnerDef> = {
+  runner: Runner<TDef>;
+  errorHandler?: ErrorHandler;
+  logger?: ControllerLogger<TDef>;
+  tracing?: ControllerTracer;
+};
+
+export type ControllerStartOpts<TDef extends RunnerDef> = TDef["opts"] & {
+  /** Function that handles events */
+  fn?: (event: TDef["event"]) => MaybePromise<{ done: boolean } | void>;
+  /** Throttle duration for events */
   throttle?: [number, Unit];
-  /** Function to filter sync events */
-  filter?: (event: SyncEvent<TSchema>) => MaybePromise<boolean>;
-  /** Function that returns true to stop syncing */
+  /** Function to filter events */
+  filter?: (event: TDef["event"]) => MaybePromise<boolean>;
+  /** Function that returns true to stop running */
   takeUntil?: (data: {
-    lastEvent: SyncEvent<TSchema> & {
+    event: TDef["event"] & {
       /**
        * Whether the event was filtered out by the filter function
        */
       isFilteredOut: boolean;
     };
-    state: ControllerStateRunning<TSchema>;
+    state: ControllerStateRunning<TDef>;
   }) => MaybePromise<boolean>;
 };
 
-export type ControllerStateCounters = {
-  applyCount: number;
-  resetCount: number;
+export type ControllerStateCounters<TDef extends RunnerDef> = Counters<
+  TDef["event"]
+> & {
   filterCount: number;
   errorCount: number;
 };
 
-export type ControllerStateMeta<TSchema extends Schema = Schema> = {
-  startOpts: Omit<ControllerStartOpts<TSchema>, "point">;
-  startingPoint: TSchema["startingPoint"];
-  syncTip: TSchema["tip"] | undefined;
-  chainTip: TSchema["tip"] | undefined;
+export type ControllerStateMeta<TDef extends RunnerDef> = TDef["meta"] & {
+  startOpts: ControllerStartOpts<TDef>;
   lastError: Error | undefined;
 };
 
-export type ControllerStateBase<TSchema extends Schema = Schema> = {
-  counters: ControllerStateCounters;
-  meta: ControllerStateMeta<TSchema>;
+export type ControllerStateBase<TDef extends RunnerDef> = {
+  counters: ControllerStateCounters<TDef>;
+  meta: ControllerStateMeta<TDef>;
 };
 
 export const controllerStatuses = [
@@ -581,20 +511,62 @@ export const controllerStatuses = [
 ] as const;
 export type ControllerStatus = (typeof controllerStatuses)[number];
 
-export type ControllerStateIdle = { status: "idle" };
+export type ControllerStateIdle = {
+  status: "idle";
+};
 
-export type ControllerStateRunning<TSchema extends Schema = Schema> = {
+export type ControllerStateRunning<TDef extends RunnerDef> = {
   status: "running";
-  generator: AsyncGenerator<SyncEvent<TSchema>, void>;
+  generator: AsyncGenerator<TDef["event"], void>;
   promise: Promise<void>;
-} & ControllerStateBase<TSchema>;
+} & ControllerStateBase<TDef>;
 
-export type ControllerStateStopped<TSchema extends Schema = Schema> = {
+export type ControllerStateStopped<TDef extends RunnerDef> = {
   status: "paused" | "done" | "crashed";
   stoppedAt: number;
-} & ControllerStateBase<TSchema>;
+} & ControllerStateBase<TDef>;
 
-export type ControllerState<TSchema extends Schema = Schema> =
+export type ControllerState<TDef extends RunnerDef> =
   | ControllerStateIdle
-  | ControllerStateRunning<TSchema>
-  | ControllerStateStopped<TSchema>;
+  | ControllerStateRunning<TDef>
+  | ControllerStateStopped<TDef>;
+
+export class ControllerTracer<
+  TConfig extends TracingConfig = TracingConfig,
+  TEvent extends AnyEvent = AnyEvent,
+> {
+  constructor(public readonly config?: TConfig) {}
+
+  recordStatus(status: ControllerStatus) {
+    this.config?.metrics?.status?.record(controllerStatuses.indexOf(status));
+  }
+
+  recordErrorCount(count: number) {
+    this.config?.metrics?.errorCount?.record(count);
+  }
+
+  recordStarted() {
+    this.config?.metrics?.filterCount?.record(0);
+    this.config?.metrics?.errorCount?.record(0);
+  }
+
+  recordCrashed() {
+    this.recordStatus("crashed");
+  }
+
+  recordArrivalTime(time: number) {
+    this.config?.metrics?.arrivalTime?.record(time);
+  }
+
+  recordEventFiltered(_event: TEvent, filterCount: number) {
+    this.config?.metrics?.filterCount?.record(filterCount);
+  }
+
+  recordEventProcessed(
+    _event: TEvent,
+    _counters: Counters<TEvent>,
+    processingTime: number,
+  ) {
+    this.config?.metrics?.processingTime?.record(processingTime);
+  }
+}

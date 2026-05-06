@@ -5,15 +5,15 @@ import {
   type Schema as OgmiosSchemaNs,
 } from "@cardano-ogmios/client";
 import { isErr, parseError, wrap } from "trynot";
-import { SocketClosedError, SocketError } from "../errors";
-import type {
-  Schema,
-  SyncClient,
-  SyncClientSyncOpts,
-  SyncEvent,
-} from "../types";
+import { SocketClosedError, SocketError } from "../../errors";
+import {
+  type IndexerEvent,
+  IndexerRunner,
+  type IndexerRunnerDef,
+  type IndexerSchema,
+} from "../../indexer";
 
-export type OgmiosSchema = Schema<
+export type OgmiosSchema = IndexerSchema<
   OgmiosSchemaNs.Block,
   OgmiosSchemaNs.PointOrOrigin,
   OgmiosSchemaNs.PointOrOrigin | "tip",
@@ -21,18 +21,24 @@ export type OgmiosSchema = Schema<
 >;
 
 type Event =
-  | { event: SyncEvent<OgmiosSchema>; requestNext: () => void }
+  | { event: IndexerEvent<OgmiosSchema>; requestNext: () => void }
   | Error;
 
-export class OgmiosSyncClient implements SyncClient<OgmiosSchema> {
-  constructor(protected _config: ConnectionConfig) {}
+export class OgmiosIndexer extends IndexerRunner<
+  IndexerRunnerDef<OgmiosSchema>
+> {
+  constructor(private _config: ConnectionConfig) {
+    super();
+  }
 
-  sync(opts: SyncClientSyncOpts<OgmiosSchema>) {
+  run(opts: IndexerRunnerDef<OgmiosSchema>["opts"]) {
     const events: Array<Event> = [];
     let waitingResolve: ((status: { returned: boolean }) => void) | null = null;
 
     const push = (
-      item: { event: SyncEvent<OgmiosSchema>; requestNext: () => void } | Error,
+      item:
+        | { event: IndexerEvent<OgmiosSchema>; requestNext: () => void }
+        | Error,
     ) => {
       events.push(item);
       if (waitingResolve) {
@@ -56,7 +62,7 @@ export class OgmiosSyncClient implements SyncClient<OgmiosSchema> {
       const client = await wrap(
         createChainSynchronizationClient(context, {
           rollForward: async ({ block, tip }, requestNext) => {
-            const event: SyncEvent<OgmiosSchema> = {
+            const event: IndexerEvent<OgmiosSchema> = {
               type: "apply",
               block,
               tip,
@@ -64,7 +70,7 @@ export class OgmiosSyncClient implements SyncClient<OgmiosSchema> {
             push({ event, requestNext });
           },
           rollBackward: async ({ point, tip }, requestNext) => {
-            const event: SyncEvent<OgmiosSchema> = {
+            const event: IndexerEvent<OgmiosSchema> = {
               type: "reset",
               point,
               tip,
