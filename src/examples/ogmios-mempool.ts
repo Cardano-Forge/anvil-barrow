@@ -4,18 +4,15 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { type Level, pino } from "pino";
 import { assert, unwrap } from "trynot";
 import { Controller } from "../controller";
-import { type MempoolRunnerDef, OgmiosMempool } from "../dep/ogmios";
+import {
+  getIdentityTxParser,
+  type MempoolRunnerDef,
+  OgmiosMempool,
+} from "../dep/ogmios";
 import { OtelTracer } from "../dep/otel";
 import { PinoLogger } from "../dep/pino";
 import { ErrorHandler } from "../error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "../errors";
-
-// Setup ogmios sync client
-const runner = new OgmiosMempool({
-  host: process.env.OGMIOS_NODE_HOST,
-  port: Number(process.env.OGMIOS_NODE_PORT),
-  tls: Boolean(process.env.OGMIOS_NODE_TLS),
-});
 
 // Setup otel tracing
 new NodeSDK({
@@ -27,24 +24,23 @@ const tracing = new OtelTracer();
 
 // Setup pino logger
 const level: Level = "trace";
-const logger = new PinoLogger<MempoolRunnerDef>(
-  pino({
-    level,
-    transport: {
-      targets: [
-        {
-          level,
-          target: "pino-pretty",
-          options: { colorize: true },
-        },
-        {
-          level,
-          target: "pino-opentelemetry-transport",
-        },
-      ],
-    },
-  }),
-);
+
+const logger = pino({
+  level,
+  transport: {
+    targets: [
+      {
+        level,
+        target: "pino-pretty",
+        options: { colorize: true },
+      },
+      {
+        level,
+        target: "pino-opentelemetry-transport",
+      },
+    ],
+  },
+});
 
 // Setup error handling
 const errorHandler = new ErrorHandler()
@@ -61,10 +57,22 @@ const errorHandler = new ErrorHandler()
     ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, backoff: true }),
   );
 
+// Setup ogmios sync client
+const runner = new OgmiosMempool({
+  connection: {
+    host: process.env.OGMIOS_NODE_HOST,
+    port: Number(process.env.OGMIOS_NODE_PORT),
+    tls: Boolean(process.env.OGMIOS_NODE_TLS),
+  },
+  parser: getIdentityTxParser(),
+  beforeRun: () => logger.info("Starting the runner..."),
+  getExistingTxs: () => [],
+});
+
 const controller = new Controller<MempoolRunnerDef>({
   runner,
   errorHandler,
-  logger,
+  logger: new PinoLogger(logger),
   tracing,
 });
 
@@ -77,7 +85,7 @@ async function main() {
 
       // Only process a specific event
       filter: (event) => {
-        return event.type === "txs" && event.txs.length > 0;
+        return event.type === "txs" && event.added.length > 0;
       },
 
       // Complete sync job when event is processed
@@ -85,9 +93,7 @@ async function main() {
         return state.counters.txsCount >= 1;
       },
 
-      fn: (_event) => {
-        // Process the event
-      },
+      fn: (event) => console.log("event", event),
     }),
   );
 

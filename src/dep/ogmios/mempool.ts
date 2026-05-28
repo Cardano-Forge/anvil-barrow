@@ -2,29 +2,26 @@ import {
   type ConnectionConfig,
   createInteractionContext,
   createMempoolMonitoringClient,
+  type InteractionContext,
+  type Schema,
 } from "@cardano-ogmios/client";
 import { isErr, parseError, wrap } from "trynot";
-import { SocketClosedError, SocketError } from "../../errors";
-import type { Counters, Runner, RunnerDef } from "../../types";
+import { AbortError, SocketError } from "../../errors";
+import { withController } from "../../generator";
+import { identity } from "../../lib/identity";
+import { EventQueue } from "../../queue";
+import type { Counters, MaybePromise, Runner, RunnerDef } from "../../types";
 
-type MempoolEvent = { type: "txs"; txs: string[] };
-
-type Event = { event: MempoolEvent } | Error;
-
-export type MempoolRunnerDef = RunnerDef<
-  Record<string, unknown>,
-  Record<string, unknown>,
-  MempoolEvent
->;
-
-export class OgmiosMempool implements Runner<MempoolRunnerDef> {
-  constructor(protected _config: ConnectionConfig) {}
+export class OgmiosMempool<TParsedTx = Schema.Transaction>
+  implements Runner<MempoolRunnerDef<TParsedTx>>
+{
+  constructor(protected opts: MempoolRunnerOpts<TParsedTx>) {}
 
   createMeta() {
     return {};
   }
 
-  createCounters(): Counters<MempoolEvent> {
+  createCounters(): Counters<MempoolEvent<TParsedTx>> {
     return { txsCount: 0 };
   }
 
@@ -32,101 +29,176 @@ export class OgmiosMempool implements Runner<MempoolRunnerDef> {
     return this.run();
   }
 
-  run() {
-    const events: Array<Event> = [];
-    let waitingResolve: ((status: { returned: boolean }) => void) | null = null;
+  run(
+    _opts?: Record<string, unknown>,
+    createGenerator = createMempoolGenerator,
+  ) {
+    const controller = new AbortController();
+    const queue = new EventQueue<QueueEvent<TParsedTx>>({
+      capacity: this.opts.queueCapacity ?? 100,
+      signal: controller.signal,
+    });
+    const generator = createGenerator(this.opts, { controller, queue });
+    return withController(generator, controller);
+  }
+}
 
-    const push = (item: Event) => {
-      events.push(item);
-      if (waitingResolve) {
-        waitingResolve({ returned: false });
-        waitingResolve = null;
-      }
-    };
+export async function* createMempoolGenerator<TParsedTx = Schema.Transaction>(
+  opts: MempoolRunnerOpts<TParsedTx>,
+  ctx: MempoolRunnerContext<TParsedTx>,
+  createClient = createMempoolClient,
+  enqueueNextEvent = enqueueNextMempoolEvent,
+) {
+  const [client, interactionContext] = await createClient(opts, ctx);
 
-    async function* _run(config: ConnectionConfig) {
-      const context = await wrap(
-        createInteractionContext(
-          (error) => push(new Error(`ogmios error: ${error.message}`)),
-          (code, reason) => push(new Error(`close ${code} ${reason}`)),
-          { connection: config },
-        ),
-      );
-      if (isErr(context)) {
-        throw new SocketError(context.message, { cause: context });
-      }
+  const runCtx = { opts, ctx, client, interactionContext };
 
-      const client = await wrap(createMempoolMonitoringClient(context));
-      if (isErr(client)) {
-        throw new SocketError(client.message, { cause: client });
-      }
+  await opts.beforeRun?.(runCtx);
 
-      try {
-        while (true) {
-          client
-            .acquireMempool()
-            .then(async () => {
-              const txs: string[] = [];
-              let txHash = await client.nextTransaction();
-              while (txHash) {
-                txs.push(txHash);
-                txHash = await client.nextTransaction();
-              }
-              push({ event: { type: "txs", txs } });
-            })
-            .catch((error) => {
-              push(parseError(error));
-            });
+  const existing = await opts.getExistingTxs?.(runCtx);
 
-          let item = events.shift();
+  let oldTxs = new Map(existing?.map((tx) => [opts.parser.getTxHash(tx), tx]));
 
-          while (!item) {
-            const status = await new Promise<{ returned: boolean }>(
-              (resolve) => {
-                waitingResolve = resolve;
-              },
-            );
-            if (status.returned) {
-              return;
-            }
-            item = events.shift();
-          }
+  try {
+    while (true) {
+      const state = { oldTxs, client };
+      enqueueNextEvent(opts, ctx, state);
+      const item = await ctx.queue.next();
+      if (item instanceof AbortError) return;
+      if (item instanceof Error) throw item;
+      oldTxs = item.newTxs;
+      yield item.event;
+    }
+  } finally {
+    await Promise.allSettled([opts.afterRun?.(runCtx), client.shutdown()]);
+  }
+}
 
-          if (item instanceof Error) {
-            throw item;
-          }
+export async function createMempoolClient<TEvent>(
+  opts: { connection?: ConnectionConfig },
+  ctx: { queue: EventQueue<TEvent | Error> },
+): Promise<[MempoolMonitoringClient, InteractionContext]> {
+  const context = await wrap(
+    createInteractionContext(
+      (error) => ctx.queue.push(new Error(`ogmios error: ${error.message}`)),
+      (code, reason) => ctx.queue.push(new Error(`close ${code} ${reason}`)),
+      opts,
+    ),
+  );
+  if (isErr(context)) {
+    throw new SocketError(context.message, { cause: context });
+  }
 
-          yield item.event;
+  const client = await wrap(createMempoolMonitoringClient(context));
+  if (isErr(client)) {
+    throw new SocketError(client.message, { cause: client });
+  }
+
+  return [client, context];
+}
+
+export async function enqueueNextMempoolEvent<TParsedTx = Schema.Transaction>(
+  opts: MempoolRunnerOpts<TParsedTx>,
+  ctx: MempoolRunnerContext<TParsedTx>,
+  state: MempoolRunnerState<TParsedTx>,
+): Promise<void> {
+  try {
+    await state.client.acquireMempool();
+
+    const added: TParsedTx[] = [];
+    const newTxs = new Map<string, TParsedTx>();
+
+    let tx = await state.client.nextTransaction({ fields: "all" });
+    while (tx) {
+      const parsed = await opts.parser.parseTx(tx);
+      if (parsed) {
+        const txHash = opts.parser.getTxHash(parsed);
+        newTxs.set(txHash, parsed);
+        if (!state.oldTxs.has(tx.id)) {
+          added.push(parsed);
         }
-      } catch (exception) {
-        const error = parseError(exception);
-        if (
-          error instanceof SocketError ||
-          error instanceof SocketClosedError
-        ) {
-          throw error;
-        }
-        throw new SocketError(error.message, { cause: error });
-      } finally {
-        await client.shutdown().catch(() => {
-          // Client may already be shut down
-        });
+      }
+      tx = await state.client.nextTransaction({ fields: "all" });
+    }
+
+    const dropped: TParsedTx[] = [];
+    for (const [txHash, tx] of state.oldTxs) {
+      if (!newTxs.has(txHash)) {
+        dropped.push(tx);
       }
     }
 
-    const generator = _run(this._config);
-
-    // Stop running generator when generator is manually stopped
-    const generatorReturn = generator.return;
-    generator.return = () => {
-      const res = generatorReturn.call(generator);
-      if (waitingResolve) {
-        waitingResolve({ returned: true });
-        waitingResolve = null;
-      }
-      return res;
-    };
-
-    return generator;
+    await ctx.queue.push({
+      event: { type: "txs", dropped, added },
+      newTxs,
+    });
+  } catch (error) {
+    await ctx.queue.push(parseError(error));
   }
 }
+
+export type TxParser<TParsedTx = Schema.Transaction> = {
+  parseTx(tx: Schema.Transaction): MaybePromise<TParsedTx | undefined>;
+  getTxHash(tx: TParsedTx): string;
+};
+
+export function getIdentityTxParser(): TxParser {
+  return {
+    parseTx: identity,
+    getTxHash: (tx) => tx.id,
+  };
+}
+
+export type MempoolEvent<TParsedTx = Schema.Transaction> = {
+  type: "txs";
+  dropped: TParsedTx[];
+  added: TParsedTx[];
+};
+
+export type MempoolRunnerDef<TParsedTx = Schema.Transaction> = RunnerDef<
+  Record<string, unknown>,
+  Record<string, unknown>,
+  MempoolEvent<TParsedTx>
+>;
+
+export type MempoolRunnerOpts<TParsedTx = Schema.Transaction> = {
+  connection: ConnectionConfig;
+  parser: TxParser<TParsedTx>;
+  /**
+   * Defines the capacity of the inner event queue.
+   * When the queue is full, new events get parked until events get dequeued.
+   * @default 100
+   */
+  queueCapacity?: number;
+  beforeRun?(c: MempoolRunFnContext<TParsedTx>): MaybePromise<void>;
+  afterRun?(c: MempoolRunFnContext<TParsedTx>): MaybePromise<void>;
+  getExistingTxs?(c: MempoolRunFnContext<TParsedTx>): MaybePromise<TParsedTx[]>;
+};
+
+export type MempoolRunnerContext<TParsedTx = Schema.Transaction> = {
+  controller: AbortController;
+  queue: EventQueue<QueueEvent<TParsedTx>>;
+};
+
+export type MempoolRunnerState<TParsedTx = Schema.Transaction> = {
+  client: MempoolMonitoringClient;
+  oldTxs: Map<string, TParsedTx>;
+};
+
+export type MempoolRunFnContext<TParsedTx = Schema.Transaction> = {
+  opts: MempoolRunnerOpts<TParsedTx>;
+  ctx: MempoolRunnerContext<TParsedTx>;
+  client: MempoolMonitoringClient;
+  interactionContext: InteractionContext;
+};
+
+export type QueueEvent<TParsedTx = Schema.Transaction> =
+  | {
+      event: MempoolEvent<TParsedTx>;
+      newTxs: Map<string, TParsedTx>;
+    }
+  | Error;
+
+export type MempoolMonitoringClient = Awaited<
+  ReturnType<typeof createMempoolMonitoringClient>
+>;

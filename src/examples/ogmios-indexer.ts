@@ -11,13 +11,6 @@ import { ErrorHandler } from "../error-handler";
 import { ProcessingError, SocketClosedError, SocketError } from "../errors";
 import type { IndexerRunnerDef } from "../indexer";
 
-// Setup ogmios sync client
-const runner = new OgmiosIndexer({
-  host: process.env.OGMIOS_NODE_HOST,
-  port: Number(process.env.OGMIOS_NODE_PORT),
-  tls: Boolean(process.env.OGMIOS_NODE_TLS),
-});
-
 // Setup otel tracing
 new NodeSDK({
   metricReader: new PeriodicExportingMetricReader({
@@ -28,24 +21,22 @@ const tracing = new OtelIndexerTracer();
 
 // Setup pino logger
 const level: Level = "trace";
-const logger = new PinoLogger<IndexerRunnerDef<OgmiosSchema>>(
-  pino({
-    level,
-    transport: {
-      targets: [
-        {
-          level,
-          target: "pino-pretty",
-          options: { colorize: true },
-        },
-        {
-          level,
-          target: "pino-opentelemetry-transport",
-        },
-      ],
-    },
-  }),
-);
+const logger = pino({
+  level,
+  transport: {
+    targets: [
+      {
+        level,
+        target: "pino-pretty",
+        options: { colorize: true },
+      },
+      {
+        level,
+        target: "pino-opentelemetry-transport",
+      },
+    ],
+  },
+});
 
 // Setup error handling
 const errorHandler = new ErrorHandler()
@@ -62,10 +53,20 @@ const errorHandler = new ErrorHandler()
     ErrorHandler.retry({ maxRetries: 2, baseDelay: 5000, backoff: true }),
   );
 
+// Setup ogmios sync client
+const runner = new OgmiosIndexer({
+  connection: {
+    host: process.env.OGMIOS_NODE_HOST,
+    port: Number(process.env.OGMIOS_NODE_PORT),
+    tls: Boolean(process.env.OGMIOS_NODE_TLS),
+  },
+  beforeRun: () => logger.info("Starting runner..."),
+});
+
 const controller = new Controller<IndexerRunnerDef<OgmiosSchema>>({
   runner,
   errorHandler,
-  logger,
+  logger: new PinoLogger(logger),
   tracing,
 });
 
@@ -78,16 +79,20 @@ async function main() {
 
       // Only process a specific event
       filter: (event) => {
-        return event.type === "apply" && event.block.height === 3859660;
+        return event.type === "apply";
       },
 
       // Complete sync job when event is processed
       takeUntil: ({ state }) => {
-        return state.counters.applyCount >= 1;
+        return state.counters.applyCount >= 5;
       },
 
-      fn: (_syncEvent) => {
-        // Process the sync event
+      fn: (syncEvent) => {
+        console.log(
+          "syncEvent",
+          syncEvent.type,
+          syncEvent.type === "apply" ? syncEvent.block.height : syncEvent.point,
+        );
       },
 
       // Define the starting point

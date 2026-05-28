@@ -83,29 +83,49 @@ Syncs blocks from the Cardano blockchain using Ogmios. Extends `IndexerRunner` w
 import { OgmiosIndexer } from "@ada-anvil/barrow/ogmios";
 
 const runner = new OgmiosIndexer({
-  host: "localhost",
-  port: 1337,
-  tls: false,
+  connection: { host: "localhost", port: 1337, tls: false },
+  beforeRun: async (ctx) => { /* optional setup before the generator starts */ },
+  afterRun: async (ctx) => { /* optional cleanup after the generator returns */ },
 });
 ```
 
 Events: `{ type: "apply", block, tip }` | `{ type: "reset", point, tip }`
 
+The internal generator and client creation are exposed as standalone exported functions (`createIndexerGenerator`, `createIndexerClient`) and can be overridden by passing a custom `createGenerator` to `run()`.
+
 #### OgmiosMempool (Mempool Monitoring)
 
-Monitors the Cardano mempool for pending transactions.
+Monitors the Cardano mempool for pending transactions. Generic over the parsed transaction type (`TParsedTx`, defaults to `Schema.Transaction`).
 
 ```typescript
-import { OgmiosMempool } from "@ada-anvil/barrow/ogmios";
+import { OgmiosMempool, getIdentityTxParser } from "@ada-anvil/barrow/ogmios";
 
 const runner = new OgmiosMempool({
-  host: "localhost",
-  port: 1337,
-  tls: false,
+  connection: { host: "localhost", port: 1337, tls: false },
+  parser: getIdentityTxParser(),
+  beforeRun: async (ctx) => { /* optional setup before the generator starts */ },
+  afterRun: async (ctx) => { /* optional cleanup after the generator returns */ },
+  getExistingTxs: async (ctx) => [], // optional: seed known txs to detect drops
 });
 ```
 
-Events: `{ type: "txs", txs: string[] }`
+Events: `{ type: "txs", added: TParsedTx[], dropped: TParsedTx[] }`
+
+Supply a custom `parser` to transform raw `Schema.Transaction` objects into your domain type:
+
+```typescript
+type MyTx = { hash: string; fee: bigint };
+
+const runner = new OgmiosMempool<MyTx>({
+  connection: { host: "localhost", port: 1337, tls: false },
+  parser: {
+    parseTx: (tx) => ({ hash: tx.id, fee: tx.fee.ada.lovelace }),
+    getTxHash: (tx) => tx.hash,
+  },
+});
+```
+
+The internal generator and client creation are exposed as standalone exported functions (`createMempoolGenerator`, `createMempoolClient`) and can be overridden by passing a custom `createGenerator` to `run()`.
 
 ### Getting Started
 
@@ -123,21 +143,18 @@ For chain indexing:
 import { OgmiosIndexer, type IndexerRunnerDef, type OgmiosSchema } from "@ada-anvil/barrow/ogmios";
 
 const runner = new OgmiosIndexer({
-  host: "localhost",
-  port: 1337,
-  tls: false,
+  connection: { host: "localhost", port: 1337, tls: false },
 });
 ```
 
 For mempool monitoring:
 
 ```typescript
-import { OgmiosMempool, type MempoolRunnerDef } from "@ada-anvil/barrow/ogmios";
+import { OgmiosMempool, getIdentityTxParser, type MempoolRunnerDef } from "@ada-anvil/barrow/ogmios";
 
 const runner = new OgmiosMempool({
-  host: "localhost",
-  port: 1337,
-  tls: false,
+  connection: { host: "localhost", port: 1337, tls: false },
+  parser: getIdentityTxParser(),
 });
 ```
 
@@ -261,12 +278,80 @@ Event shapes depend on the runner. Built-in runners emit:
 
 **OgmiosMempool events:**
 
-- `txs`: `{ type: "txs", txs: string[] }`
+- `txs`: `{ type: "txs", added: TParsedTx[], dropped: TParsedTx[] }`
 
 **Point (IndexerRunner):**
 
 - `slot`: Slot number
 - `id`: Block hash
+
+## ErrorHandler
+
+`ErrorHandler` defines how errors are handled during event processing. Pass an instance to `Controller` via the `errorHandler` config option.
+
+```typescript
+import { Controller, ErrorHandler } from "@ada-anvil/barrow";
+
+const errorHandler = new ErrorHandler(
+  ErrorHandler.retry({ maxRetries: 3, baseDelay: 1000 }),
+);
+```
+
+### Registering handlers
+
+Handlers can be registered in the constructor or via `.register()`. Each handler is called in order until one returns a result.
+
+```typescript
+errorHandler.register((error) => {
+  if (error instanceof MyTransientError) return { retry: { delay: 500 } };
+});
+```
+
+Filter by error type (constructor) or predicate:
+
+```typescript
+errorHandler.register(MyTransientError, ErrorHandler.retry({ maxRetries: 5 }));
+errorHandler.register(
+  (e) => e instanceof Error && e.message.includes("timeout"),
+  ErrorHandler.retryWithBackoff({ maxRetries: 4, baseDelay: 200 }),
+);
+```
+
+### Built-in policies
+
+`ErrorHandler.retry(opts)` and `ErrorHandler.retryWithBackoff(opts)` return retry policies:
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `maxRetries` | `number` | required | Maximum number of retry attempts |
+| `baseDelay` | `number` | `0` | Milliseconds between retries |
+| `backoff` | `boolean` | `false` | Double the delay on each attempt |
+| `persistent` | `boolean` | `false` | Preserve retry count across job restarts |
+
+### Handler result
+
+A handler function should return `{ retry: { delay?: number } }` to trigger a retry, or `undefined`/`void` to pass to the next handler. If no handler returns a result, the error is rethrown.
+
+## EventQueue
+
+`EventQueue` is a bounded async queue with abort signal support. It is used internally by the built-in runners but is also exported for use in custom runners.
+
+```typescript
+import { EventQueue } from "@ada-anvil/barrow";
+
+const queue = new EventQueue<MyEvent>({ capacity: 100, signal: abortController.signal });
+
+await queue.push(event);         // blocks when full
+const result = await queue.next(); // blocks when empty
+// result is the event, or an AbortError if the signal was aborted
+```
+
+Configuration:
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `capacity` | `number` | `Infinity` | Max queued items before `push` blocks |
+| `signal` | `AbortSignal` | none | Signal to abort waiting producers/consumers |
 
 ## Logger
 
@@ -283,7 +368,7 @@ import { pinoLogger } from "@ada-anvil/barrow/pino";
 import { pino } from "pino";
 
 const controller = new Controller<IndexerRunnerDef<OgmiosSchema>>({
-  runner: new OgmiosIndexer({ host: "localhost", port: 1337, tls: false }),
+  runner: new OgmiosIndexer({ connection: { host: "localhost", port: 1337, tls: false } }),
   logger: pinoLogger(pino()),
 });
 ```
@@ -303,7 +388,10 @@ import { otelTracingConfig } from "@ada-anvil/barrow/otel";
 import { ControllerTracer } from "@ada-anvil/barrow";
 
 const controller = new Controller<MempoolRunnerDef>({
-  runner: new OgmiosMempool({ host: "localhost", port: 1337, tls: false }),
+  runner: new OgmiosMempool({
+    connection: { host: "localhost", port: 1337, tls: false },
+    parser: getIdentityTxParser(),
+  }),
   tracing: new ControllerTracer(otelTracingConfig()),
 });
 ```
