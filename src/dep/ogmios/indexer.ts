@@ -24,11 +24,14 @@ export class OgmiosIndexer extends IndexerRunner<
     super();
   }
 
-  run(startOpts: IndexerRunnerDef<OgmiosSchema>["opts"]) {
+  run(
+    startOpts: IndexerRunnerDef<OgmiosSchema>["opts"],
+    createGenerator = createIndexerGenerator,
+  ) {
     const controller = new AbortController();
     const queue = new EventQueue<QueueEvent>(controller);
     const ctx = { controller, queue, startOpts };
-    const generator = createIndexerGenerator(this.opts, ctx);
+    const generator = createGenerator(this.opts, ctx);
     return withController(generator, controller);
   }
 }
@@ -36,8 +39,9 @@ export class OgmiosIndexer extends IndexerRunner<
 export async function* createIndexerGenerator(
   opts: IndexerRunnerOpts,
   ctx: IndexerRunnerContext,
+  createClient = createIndexerClient,
 ) {
-  const [client, interactionContext] = await createIndexerClient(opts, ctx);
+  const [client, interactionContext] = await createClient(opts, ctx);
 
   const runCtx = { opts, ctx, client, interactionContext };
 

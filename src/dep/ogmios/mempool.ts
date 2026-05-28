@@ -29,10 +29,13 @@ export class OgmiosMempool<TParsedTx = Schema.Transaction>
     return this.run();
   }
 
-  run() {
+  run(
+    _opts?: Record<string, unknown>,
+    createGenerator = createMempoolGenerator,
+  ) {
     const controller = new AbortController();
     const queue = new EventQueue<QueueEvent<TParsedTx>>(controller);
-    const generator = createMempoolGenerator(this.opts, { controller, queue });
+    const generator = createGenerator(this.opts, { controller, queue });
     return withController(generator, controller);
   }
 }
@@ -40,8 +43,10 @@ export class OgmiosMempool<TParsedTx = Schema.Transaction>
 export async function* createMempoolGenerator<TParsedTx = Schema.Transaction>(
   opts: MempoolRunnerOpts<TParsedTx>,
   ctx: MempoolRunnerContext<TParsedTx>,
+  createClient = createMempoolClient,
+  enqueueNextEvent = enqueueNextMempoolEvent,
 ) {
-  const [client, interactionContext] = await createMempoolClient(opts, ctx);
+  const [client, interactionContext] = await createClient(opts, ctx);
 
   const runCtx = { opts, ctx, client, interactionContext };
 
@@ -54,7 +59,7 @@ export async function* createMempoolGenerator<TParsedTx = Schema.Transaction>(
   try {
     while (true) {
       const state = { oldTxs, client };
-      enqueueNextMempoolEvent(opts, ctx, state);
+      enqueueNextEvent(opts, ctx, state);
       const item = await ctx.queue.next();
       if (item instanceof AbortError) return;
       if (item instanceof Error) throw item;
