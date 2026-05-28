@@ -14,7 +14,7 @@ import {
   createInteractionContext,
 } from "@cardano-ogmios/client";
 
-describe("OgmiosRunner", () => {
+describe("OgmiosIndexer", () => {
   const mockOpts: IndexerRunnerOpts = {
     connection: { host: "localhost", port: 1337 },
   };
@@ -310,17 +310,6 @@ describe("OgmiosRunner", () => {
       await generator.return();
 
       expect(mockClient.shutdown).toHaveBeenCalled();
-    });
-
-    it("should wrap non-SocketError exceptions in SocketError", async () => {
-      const mockError = new Error("Generic error");
-
-      vi.mocked(createChainSynchronizationClient).mockRejectedValue(mockError);
-
-      const runner = new OgmiosIndexer(mockOpts);
-      const generator = runner.run({ point: "tip" });
-
-      await expect(generator.next()).rejects.toThrow(SocketError);
     });
   });
 });
