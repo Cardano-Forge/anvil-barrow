@@ -20,6 +20,13 @@ export class SocketError extends Error {
   }
 }
 
+export class AbortError extends Error {
+  constructor(message: string, opts?: ErrorOptions) {
+    super(message, opts);
+    this.name = "AbortError";
+  }
+}
+
 export class ProcessingError<TDef extends RunnerDef> extends Error {
   constructor(
     public readonly event: TDef["event"],
