@@ -1,7 +1,7 @@
 {
   "name": "@ada-anvil/barrow",
   "description": "A framework for building event processing tools",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "author": "Anvil Development Agency",
   "license": "Apache-2.0",
   "publishConfig": {
