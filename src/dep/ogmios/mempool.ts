@@ -70,9 +70,7 @@ export async function* createMempoolGenerator<TParsedTx = Schema.Transaction>(
       yield item.event;
     }
   } finally {
-    await client.shutdown().catch(() => {
-      // Client may already be shut down
-    });
+    await Promise.allSettled([opts.afterRun?.(runCtx), client.shutdown()]);
   }
 }
 
@@ -113,10 +111,12 @@ export async function enqueueNextMempoolEvent<TParsedTx = Schema.Transaction>(
     let tx = await state.client.nextTransaction({ fields: "all" });
     while (tx) {
       const parsed = await opts.parser.parseTx(tx);
-      const txHash = opts.parser.getTxHash(parsed);
-      newTxs.set(txHash, parsed);
-      if (!state.oldTxs.has(tx.id)) {
-        added.push(parsed);
+      if (parsed) {
+        const txHash = opts.parser.getTxHash(parsed);
+        newTxs.set(txHash, parsed);
+        if (!state.oldTxs.has(tx.id)) {
+          added.push(parsed);
+        }
       }
       tx = await state.client.nextTransaction({ fields: "all" });
     }
@@ -138,7 +138,7 @@ export async function enqueueNextMempoolEvent<TParsedTx = Schema.Transaction>(
 }
 
 export type TxParser<TParsedTx = Schema.Transaction> = {
-  parseTx(tx: Schema.Transaction): MaybePromise<TParsedTx>;
+  parseTx(tx: Schema.Transaction): MaybePromise<TParsedTx | undefined>;
   getTxHash(tx: TParsedTx): string;
 };
 
@@ -171,6 +171,7 @@ export type MempoolRunnerOpts<TParsedTx = Schema.Transaction> = {
    */
   queueCapacity?: number;
   beforeRun?(c: MempoolRunFnContext<TParsedTx>): MaybePromise<void>;
+  afterRun?(c: MempoolRunFnContext<TParsedTx>): MaybePromise<void>;
   getExistingTxs?(c: MempoolRunFnContext<TParsedTx>): MaybePromise<TParsedTx[]>;
 };
 

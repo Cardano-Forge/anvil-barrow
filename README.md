@@ -85,6 +85,7 @@ import { OgmiosIndexer } from "@ada-anvil/barrow/ogmios";
 const runner = new OgmiosIndexer({
   connection: { host: "localhost", port: 1337, tls: false },
   beforeRun: async (ctx) => { /* optional setup before the generator starts */ },
+  afterRun: async (ctx) => { /* optional cleanup after the generator returns */ },
 });
 ```
 
@@ -103,6 +104,7 @@ const runner = new OgmiosMempool({
   connection: { host: "localhost", port: 1337, tls: false },
   parser: getIdentityTxParser(),
   beforeRun: async (ctx) => { /* optional setup before the generator starts */ },
+  afterRun: async (ctx) => { /* optional cleanup after the generator returns */ },
   getExistingTxs: async (ctx) => [], // optional: seed known txs to detect drops
 });
 ```

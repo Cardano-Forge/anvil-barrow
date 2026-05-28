@@ -64,9 +64,7 @@ export async function* createIndexerGenerator(
       item.requestNext();
     }
   } finally {
-    await client.shutdown().catch(() => {
-      // Client may already be shut down
-    });
+    await Promise.allSettled([opts.afterRun?.(runCtx), client.shutdown()]);
   }
 }
 
@@ -132,6 +130,7 @@ export type IndexerRunnerOpts = {
    */
   queueCapacity?: number;
   beforeRun?(c: IndexerRunFnContext): MaybePromise<void>;
+  afterRun?(c: IndexerRunFnContext): MaybePromise<void>;
 };
 
 export type IndexerRunnerContext = {
