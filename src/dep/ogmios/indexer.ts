@@ -29,7 +29,10 @@ export class OgmiosIndexer extends IndexerRunner<
     createGenerator = createIndexerGenerator,
   ) {
     const controller = new AbortController();
-    const queue = new EventQueue<QueueEvent>(controller);
+    const queue = new EventQueue<QueueEvent>({
+      capacity: this.opts.queueCapacity ?? 100,
+      signal: controller.signal,
+    });
     const ctx = { controller, queue, startOpts };
     const generator = createGenerator(this.opts, ctx);
     return withController(generator, controller);
@@ -122,6 +125,12 @@ type QueueEvent =
 
 export type IndexerRunnerOpts = {
   connection: ConnectionConfig;
+  /**
+   * Defines the capacity of the inner event queue.
+   * When the queue is full, new events get parked until events get dequeued.
+   * @default 100
+   */
+  queueCapacity?: number;
   beforeRun?(c: IndexerRunFnContext): MaybePromise<void>;
 };
 

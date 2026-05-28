@@ -34,7 +34,10 @@ export class OgmiosMempool<TParsedTx = Schema.Transaction>
     createGenerator = createMempoolGenerator,
   ) {
     const controller = new AbortController();
-    const queue = new EventQueue<QueueEvent<TParsedTx>>(controller);
+    const queue = new EventQueue<QueueEvent<TParsedTx>>({
+      capacity: this.opts.queueCapacity ?? 100,
+      signal: controller.signal,
+    });
     const generator = createGenerator(this.opts, { controller, queue });
     return withController(generator, controller);
   }
@@ -161,6 +164,12 @@ export type MempoolRunnerDef<TParsedTx = Schema.Transaction> = RunnerDef<
 export type MempoolRunnerOpts<TParsedTx = Schema.Transaction> = {
   connection: ConnectionConfig;
   parser: TxParser<TParsedTx>;
+  /**
+   * Defines the capacity of the inner event queue.
+   * When the queue is full, new events get parked until events get dequeued.
+   * @default 100
+   */
+  queueCapacity?: number;
   beforeRun?(c: MempoolRunFnContext<TParsedTx>): MaybePromise<void>;
   getExistingTxs?(c: MempoolRunFnContext<TParsedTx>): MaybePromise<TParsedTx[]>;
 };
