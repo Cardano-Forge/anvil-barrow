@@ -311,5 +311,161 @@ describe("OgmiosIndexer", () => {
 
       expect(mockClient.shutdown).toHaveBeenCalled();
     });
+
+    it("should call beforeRun if provided", async () => {
+      const beforeRun = vi.fn().mockResolvedValue(undefined);
+      const mockBlock = { id: "block1", height: 100 } as Schema.Block;
+      const mockTip = { height: 100, id: "tip1" } as Schema.Tip;
+
+      vi.mocked(createChainSynchronizationClient).mockImplementation(
+        async (_ctx, handlers) => {
+          setTimeout(() => {
+            handlers.rollForward({ block: mockBlock, tip: mockTip }, () => {});
+          }, 10);
+          return mockClient;
+        },
+      );
+
+      const runner = new OgmiosIndexer({ ...mockOpts, beforeRun });
+      const generator = runner.run({ point: "tip" });
+
+      await generator.next();
+
+      expect(beforeRun).toHaveBeenCalledOnce();
+
+      await generator.return();
+    });
+  });
+
+  describe("resume", () => {
+    it("should resume from syncTip when available", async () => {
+      const mockPoint = { slot: 50, id: "point1" } as Schema.Point;
+      const mockBlock = { id: "block1", height: 100 } as Schema.Block;
+      const mockTip = { height: 100, id: "tip1" } as Schema.Tip;
+
+      vi.mocked(createChainSynchronizationClient).mockImplementation(
+        async (_ctx, handlers) => {
+          setTimeout(() => {
+            handlers.rollForward({ block: mockBlock, tip: mockTip }, () => {});
+          }, 10);
+          return mockClient;
+        },
+      );
+
+      const runner = new OgmiosIndexer(mockOpts);
+      const meta = {
+        startingPoint: "tip" as const,
+        syncTip: mockPoint as Schema.Tip,
+        chainTip: undefined,
+      };
+      const generator = runner.resume(meta);
+
+      await generator.next();
+
+      expect(mockClient.resume).toHaveBeenCalledWith([mockPoint]);
+
+      await generator.return();
+    });
+
+    it("should resume from startingPoint when syncTip is undefined", async () => {
+      const mockBlock = { id: "block1", height: 100 } as Schema.Block;
+      const mockTip = { height: 100, id: "tip1" } as Schema.Tip;
+
+      vi.mocked(createChainSynchronizationClient).mockImplementation(
+        async (_ctx, handlers) => {
+          setTimeout(() => {
+            handlers.rollForward({ block: mockBlock, tip: mockTip }, () => {});
+          }, 10);
+          return mockClient;
+        },
+      );
+
+      const runner = new OgmiosIndexer(mockOpts);
+      const meta = {
+        startingPoint: "tip" as const,
+        syncTip: undefined,
+        chainTip: undefined,
+      };
+      const generator = runner.resume(meta);
+
+      await generator.next();
+
+      expect(mockClient.resume).toHaveBeenCalledWith(undefined);
+
+      await generator.return();
+    });
+  });
+
+  describe("createMeta", () => {
+    it("should return meta with startingPoint from opts", () => {
+      const runner = new OgmiosIndexer(mockOpts);
+      const point = { slot: 10, id: "p1" } as Schema.Point;
+      const meta = runner.createMeta({ point });
+      expect(meta).toEqual({
+        startingPoint: point,
+        syncTip: undefined,
+        chainTip: undefined,
+      });
+    });
+  });
+
+  describe("createCounters", () => {
+    it("should return zeroed apply and reset counters", () => {
+      const runner = new OgmiosIndexer(mockOpts);
+      expect(runner.createCounters()).toEqual({ applyCount: 0, resetCount: 0 });
+    });
+  });
+
+  describe("onEventProcessed", () => {
+    it("should update chainTip and syncTip on apply event", () => {
+      const runner = new OgmiosIndexer(mockOpts);
+      const meta = {
+        startingPoint: "tip" as const,
+        syncTip: undefined,
+        chainTip: undefined,
+      };
+      const block = {
+        type: "praos",
+        slot: 100,
+        id: "b1",
+        height: 10,
+      } as unknown as Schema.Block;
+      const tip = { slot: 100, id: "t1", height: 10 } as Schema.Tip;
+      runner.onEventProcessed({ type: "apply", block, tip }, { meta });
+      expect(meta.chainTip).toBe(tip);
+      expect(meta.syncTip).toEqual({ slot: 100, id: "b1", height: 10 });
+    });
+
+    it("should update chainTip but not syncTip on reset event", () => {
+      const runner = new OgmiosIndexer(mockOpts);
+      const meta = {
+        startingPoint: "tip" as const,
+        syncTip: undefined,
+        chainTip: undefined,
+      };
+      const point = { slot: 50, id: "p1" } as Schema.Point;
+      const tip = { slot: 100, id: "t1", height: 10 } as Schema.Tip;
+      runner.onEventProcessed({ type: "reset", point, tip }, { meta });
+      expect(meta.chainTip).toBe(tip);
+      expect(meta.syncTip).toBeUndefined();
+    });
+
+    it("should not update syncTip for ebb blocks", () => {
+      const runner = new OgmiosIndexer(mockOpts);
+      const meta = {
+        startingPoint: "tip" as const,
+        syncTip: undefined,
+        chainTip: undefined,
+      };
+      const block = {
+        type: "ebb",
+        slot: 100,
+        id: "b1",
+      } as unknown as Schema.Block;
+      const tip = { slot: 100, id: "t1", height: 10 } as Schema.Tip;
+      runner.onEventProcessed({ type: "apply", block, tip }, { meta });
+      expect(meta.chainTip).toBe(tip);
+      expect(meta.syncTip).toBeUndefined();
+    });
   });
 });
