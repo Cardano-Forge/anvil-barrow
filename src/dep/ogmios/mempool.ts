@@ -5,7 +5,6 @@ import {
   type InteractionContext,
   type Schema,
 } from "@cardano-ogmios/client";
-import type { MempoolMonitoringClient } from "@cardano-ogmios/client/dist/MempoolMonitoring";
 import { isErr, parseError, wrap } from "trynot";
 import { AbortError, SocketError } from "../../errors";
 import { withController } from "../../generator";
@@ -33,12 +32,12 @@ export class OgmiosMempool<TParsedTx = Schema.Transaction>
   run() {
     const controller = new AbortController();
     const queue = new EventQueue<QueueEvent<TParsedTx>>(controller);
-    const generator = makeMempoolGenerator(this.opts, { controller, queue });
+    const generator = createMempoolGenerator(this.opts, { controller, queue });
     return withController(generator, controller);
   }
 }
 
-export async function* makeMempoolGenerator<TParsedTx = Schema.Transaction>(
+export async function* createMempoolGenerator<TParsedTx = Schema.Transaction>(
   opts: MempoolRunnerOpts<TParsedTx>,
   ctx: MempoolRunnerContext<TParsedTx>,
 ) {
@@ -184,3 +183,7 @@ export type QueueEvent<TParsedTx = Schema.Transaction> =
       newTxs: Map<string, TParsedTx>;
     }
   | Error;
+
+export type MempoolMonitoringClient = Awaited<
+  ReturnType<typeof createMempoolMonitoringClient>
+>;
